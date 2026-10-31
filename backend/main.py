@@ -13,7 +13,10 @@ from dotenv import load_dotenv
 
 load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 
-from db import get_db, DB_PATH
+try:
+    from db import get_db, DB_PATH
+except ImportError:
+    from backend.db import get_db, DB_PATH
 
 def get_frontend_dir():
     local_fe = os.path.abspath(os.path.join(os.path.dirname(__file__), "frontend"))
@@ -79,6 +82,14 @@ def ensure_db_seeded():
         print(f"✓ Database verified and ready at {DB_PATH}")
     except Exception as e:
         print(f"Database initialization error: {e}")
+
+    try:
+        conn = get_db()
+        conn.execute("ALTER TABLE complaints ADD COLUMN media_url TEXT")
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
 
 class ConductorUpdate(BaseModel):
     bus_id: str
@@ -374,10 +385,16 @@ def create_complaint(payload: ComplaintCreate):
     stop = payload.stop_name or "Visakhapatnam"
     full_text = f"[{stop}] {payload.description}"
 
-    cursor.execute("""
-        INSERT INTO complaints (ticket_id, bus_number, complaint_text, ai_category, ai_priority, status, media_url)
-        VALUES (?, ?, ?, ?, ?, 'Open', ?)
-    """, (ticket_id, route_no, full_text, cat, priority, payload.media_url))
+    try:
+        cursor.execute("""
+            INSERT INTO complaints (ticket_id, bus_number, complaint_text, ai_category, ai_priority, status, media_url)
+            VALUES (?, ?, ?, ?, ?, 'Open', ?)
+        """, (ticket_id, route_no, full_text, cat, priority, payload.media_url))
+    except sqlite3.OperationalError:
+        cursor.execute("""
+            INSERT INTO complaints (ticket_id, bus_number, complaint_text, ai_category, ai_priority, status)
+            VALUES (?, ?, ?, ?, ?, 'Open')
+        """, (ticket_id, route_no, full_text, cat, priority))
     conn.commit()
     conn.close()
     return {"status": "created", "ticket_id": ticket_id}
