@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Vizag Bus AI – Transit Operations & Fleet Control Center</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg-base: #0B0F19;
+      --bg-panel: rgba(17, 24, 39, 0.75);
+      --bg-surface: #111827;
+      --accent-red: #ef4444;
+      --accent-amber: #f59e0b;
+      --accent-emerald: #10b981;
+      --accent-cyan: #06b6d4;
+      --border-panel: rgba(255, 255, 255, 0.08);
+      --border-glow: rgba(239, 68, 68, 0.35);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      background-color: var(--bg-base);
+      color: #f3f4f6;
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      min-height: 100vh;
+      background-image: 
+        radial-gradient(circle at 15% 15%, rgba(239, 68, 68, 0.08) 0%, transparent 40%),
+        radial-gradient(circle at 85% 85%, rgba(6, 182, 212, 0.06) 0%, transparent 40%);
+      background-attachment: fixed;
+    }
+
+    .glass-card {
+      background: var(--bg-panel);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid var(--border-panel);
+      border-radius: 16px;
+      box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.7);
+      transition: all 0.25s ease;
+    }
+
+    .glass-card:hover {
+      border-color: rgba(255, 255, 255, 0.14);
+    }
+
+    .field-input {
+      width: 100%;
+      background-color: rgba(15, 23, 42, 0.8);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 10px;
+      padding: 0.65rem 0.9rem;
+      color: #ffffff;
+      font-size: 0.88rem;
+      outline: none;
+      transition: all 0.2s ease;
+    }
+
+    .field-input:focus {
+      border-color: var(--accent-red);
+      box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.25);
+    }
+
+    .btn-crimson {
+      background: linear-gradient(135deg, #ef4444 0%, #b91c1c 100%);
+      color: #ffffff;
+      font-weight: 700;
+      border-radius: 10px;
+      padding: 0.65rem 1.1rem;
+      font-size: 0.88rem;
+      transition: all 0.2s ease;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.45rem;
+      cursor: pointer;
+      box-shadow: 0 4px 14px rgba(239, 68, 68, 0.35);
+    }
+
+    .btn-crimson:hover {
+      filter: brightness(1.15);
+      transform: translateY(-1px);
+    }
+
+    .btn-secondary {
+      background: rgba(31, 41, 55, 0.7);
+      color: #d1d5db;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      font-weight: 600;
+      border-radius: 10px;
+      padding: 0.65rem 1.1rem;
+      font-size: 0.88rem;
+      transition: all 0.2s ease;
+      cursor: pointer;
+    }
+
+    .btn-secondary:hover {
+      background: rgba(55, 65, 81, 0.85);
+      color: #ffffff;
+      border-color: var(--accent-red);
+    }
+
+    .mono { font-family: 'JetBrains Mono', monospace; }
+
+    #toast {
+      position: fixed;
+      bottom: 1.5rem;
+      right: 1.5rem;
+      z-index: 9999;
+      padding: 0.85rem 1.3rem;
+      border-radius: 12px;
+      font-weight: 700;
+      font-size: 0.88rem;
+      transform: translateY(150%);
+      transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.8);
+      background: #111827;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: #ffffff;
+    }
+
+    #toast.active { transform: translateY(0); }
+  </style>
+</head>
+<body class="p-4 lg:p-8">
+
+  <!-- TOP HEADER -->
+  <header class="max-w-7xl mx-auto mb-6 flex flex-wrap items-center justify-between gap-4 p-4 glass-card border-red-500/30">
+    <div class="flex items-center gap-3">
+      <div class="w-11 h-11 rounded-xl bg-gradient-to-br from-red-600 to-rose-700 flex items-center justify-center font-black text-xl text-white shadow-lg shadow-red-600/30">
+        ⚡
+      </div>
+      <div>
+        <div class="flex items-center gap-2">
+          <h1 class="text-lg font-black tracking-tight text-white">VIZAG TRANSIT CONTROL CENTER</h1>
+          <span class="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded bg-red-500/20 text-red-400 border border-red-500/40">OPS PORTAL</span>
+        </div>
+        <p class="text-xs text-gray-400">Greater Visakhapatnam Smart Public Transit • Fleet Dispatch & Incident Management</p>
+      </div>
+    </div>
+
+    <div class="flex items-center gap-2.5">
+      <a href="index.html" class="btn-secondary !py-2 !px-3 !text-xs flex items-center gap-1.5 hover:!border-cyan-500 hover:!text-cyan-400">
+        <span>←</span> Commuter App
+      </a>
+      <button id="btn-logout" class="btn-secondary !py-2 !px-3 !text-xs hidden text-red-400 hover:!bg-red-950/60 hover:!border-red-500">
+        🔒 Logout
+      </button>
+    </div>
+  </header>
+
+  <main class="max-w-7xl mx-auto space-y-6">
+
+    <!-- 1. MANAGER AUTHENTICATION SCREEN -->
+    <div id="login-container" class="max-w-md mx-auto my-14 glass-card p-8 space-y-5 border-t-4 border-red-500">
+      <div class="text-center space-y-2">
+        <div class="w-16 h-16 mx-auto rounded-2xl bg-gradient-to-br from-red-500 to-rose-700 flex items-center justify-center text-3xl shadow-xl shadow-red-500/30">
+          🔐
+        </div>
+        <h2 class="text-xl font-black tracking-tight text-white">Transit Manager Login</h2>
+        <p class="text-xs text-gray-400">
+          Restricted access for GVMC Fleet Controllers & Transit Authorities
+        </p>
+      </div>
+
+      <form id="form-login" onsubmit="return false;" class="space-y-4 pt-2">
+        <div>
+          <label class="text-xs font-bold text-gray-300 mb-1.5 block">Manager User ID</label>
+          <input id="login-id" type="text" class="field-input" placeholder="e.g. admin" autocomplete="username" required value="admin" />
+        </div>
+
+        <div>
+          <label class="text-xs font-bold text-gray-300 mb-1.5 block">Manager Password</label>
+          <input id="login-pass" type="password" class="field-input" placeholder="Enter password" autocomplete="current-password" required value="admin123" />
+        </div>
+
+        <div id="login-error" class="hidden p-3 rounded-lg text-xs font-semibold text-center bg-red-950/60 border border-red-500 text-red-300"></div>
+
+        <div class="space-y-2.5 pt-2">
+          <button id="btn-login-submit" type="submit" class="btn-crimson w-full !py-2.5 font-bold shadow-lg shadow-red-500/30">
+            Authenticate & Open Operations Console ➔
+          </button>
+          <p class="text-[11px] text-gray-500 text-center">Default credential: <span class="mono text-gray-400">admin / admin123</span></p>
+        </div>
+      </form>
+    </div>
+
+    <!-- 2. FLEET OPERATIONS CONSOLE -->
+    <div id="dashboard-container" class="hidden space-y-6">
+
+      <!-- Status Bar Summary -->
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div class="glass-card p-4 space-y-1 border-cyan-500/30">
+          <div class="text-xs font-bold text-gray-400 uppercase">Active Running Fleet</div>
+          <div class="text-2xl font-black text-cyan-400 flex items-baseline gap-2">
+            <span id="stat-active-buses">--</span>
+            <span class="text-xs font-semibold text-gray-400">Buses live</span>
+          </div>
+        </div>
+
+        <div class="glass-card p-4 space-y-1 border-red-500/30">
+          <div class="text-xs font-bold text-gray-400 uppercase">Open Passenger Tickets</div>
+          <div class="text-2xl font-black text-red-400 flex items-baseline gap-2">
+            <span id="stat-open-tickets">--</span>
+            <span class="text-xs font-semibold text-gray-400">Needs review</span>
+          </div>
+        </div>
+
+        <div class="glass-card p-4 space-y-1 border-emerald-500/30">
+          <div class="text-xs font-bold text-gray-400 uppercase">Network Health</div>
+          <div class="text-2xl font-black text-emerald-400 flex items-baseline gap-2">
+            <span>99.4%</span>
+            <span class="text-xs font-semibold text-gray-400">All Lines Normal</span>
+          </div>
+        </div>
+
+        <div class="glass-card p-4 space-y-1 border-amber-500/30">
+          <div class="text-xs font-bold text-gray-400 uppercase">CV Camera Sensors</div>
+          <div class="text-2xl font-black text-amber-400 flex items-baseline gap-2">
+            <span>Online</span>
+            <span class="text-xs font-semibold text-gray-400">Automated</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Main Two-Column Layout -->
+      <div class="grid lg:grid-cols-12 gap-6">
+
+        <!-- LEFT COLUMN: Dispatch New Bus & Crowd Simulator (5 Cols) -->
+        <div class="lg:col-span-5 space-y-6">
+
+          <!-- Card 1: Dispatch New Bus -->
+          <form id="form-dispatch-bus" class="glass-card p-5 space-y-4" onsubmit="return false;">
+            <div class="flex items-center justify-between border-b border-gray-800 pb-3">
+              <div class="flex items-center gap-2">
+                <span class="text-xl">🚌</span>
+                <h3 class="text-base font-extrabold text-white">Dispatch New Bus to Fleet</h3>
+              </div>
+              <span class="text-[10px] font-black uppercase px-2 py-0.5 rounded bg-red-500/20 text-red-400 border border-red-500/30">LIVE INJECTION</span>
+            </div>
+
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="text-xs font-bold text-gray-300 mb-1 block">Bus Line Number</label>
+                <input name="bus_number" class="field-input font-bold" placeholder="e.g. 500D" required />
+              </div>
+              <div>
+                <label class="text-xs font-bold text-gray-300 mb-1 block">Current Stop Location</label>
+                <input id="disp-cur-loc" name="current_location" class="field-input" placeholder="e.g. Siripuram Junction" required />
+              </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="text-xs font-bold text-gray-300 mb-1 block">Origin (Source)</label>
+                <input name="source" class="field-input" placeholder="e.g. Gajuwaka Junction" required />
+              </div>
+              <div>
+                <label class="text-xs font-bold text-gray-300 mb-1 block">Destination</label>
+                <input name="destination" class="field-input" placeholder="e.g. Rushikonda Beach" required />
+              </div>
+            </div>
+
+            <!-- Quick Preset for Vizag Coordinates -->
+            <div>
+              <label class="text-xs font-bold text-cyan-300 mb-1 block">Auto-Fill Vizag Stop Coordinates</label>
+              <select id="preset-stops" class="field-input text-xs text-gray-200">
+                <option value="">-- Select a major Vizag stop to populate Lat/Lng --</option>
+                <option value="17.6904,83.2095,Gajuwaka Junction">Gajuwaka Junction</option>
+                <option value="17.7447,83.2319,NAD Junction">NAD Junction</option>
+                <option value="17.7265,83.3073,RTC Complex (Dwaraka Nagar)">RTC Complex (Dwaraka Nagar)</option>
+                <option value="17.7205,83.3168,Siripuram Junction">Siripuram Junction</option>
+                <option value="17.7384,83.3289,Maddilapalem">Maddilapalem</option>
+                <option value="17.7412,83.3375,MVP Colony Circle">MVP Colony Circle</option>
+                <option value="17.7816,83.3831,Rushikonda Beach Stop">Rushikonda Beach Stop</option>
+                <option value="17.7142,83.3239,RK Beach">RK Beach</option>
+                <option value="17.7660,83.2420,Simhachalam Foothills">Simhachalam Foothills</option>
+                <option value="17.6850,83.1670,Kurmannapalem Junction">Kurmannapalem Junction</option>
+                <option value="17.8220,83.2010,Pendurthi Junction">Pendurthi Junction</option>
+                <option value="17.8170,83.3530,Madhurawada">Madhurawada</option>
+                <option value="17.8920,83.4540,Bheemunipatnam Bus Stand">Bheemunipatnam (Bheemili)</option>
+                <option value="17.7225,83.2245,Visakhapatnam Airport">Visakhapatnam Airport</option>
+              </select>
+            </div>
+
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="text-xs font-bold text-gray-300 mb-1 block">Latitude</label>
+                <input id="disp-lat" name="lat" type="number" step="any" class="field-input mono" placeholder="17.7205" required />
+              </div>
+              <div>
+                <label class="text-xs font-bold text-gray-300 mb-1 block">Longitude</label>
+                <input id="disp-lng" name="lng" type="number" step="any" class="field-input mono" placeholder="83.3168" required />
+              </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="text-xs font-bold text-gray-300 mb-1 block">ETA to Stop (Mins)</label>
+                <input name="eta_minutes" type="number" min="1" class="field-input" placeholder="8" required />
+              </div>
+              <div>
+                <label class="text-xs font-bold text-gray-300 mb-1 block">Current Occupancy (%)</label>
+                <input name="crowd_percentage" type="number" min="0" max="100" class="field-input" placeholder="40" required />
+              </div>
+            </div>
+
+            <button id="btn-submit-bus" type="submit" class="btn-crimson w-full font-bold">
+              + Add Bus to Active GPS Radar
+            </button>
+          </form>
+
+          <!-- Card 2: CV Sensor Simulator -->
+          <div class="glass-card p-5 space-y-4">
+            <div class="flex items-center justify-between border-b border-gray-800 pb-3">
+              <div class="flex items-center gap-2">
+                <span class="text-xl">📹</span>
+                <h3 class="text-base font-extrabold text-white">AI Camera Sensor Simulator</h3>
+              </div>
+              <span class="text-[10px] font-black uppercase px-2 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30">CROWD CV</span>
+            </div>
+            <p class="text-xs text-gray-400">
+              Simulate automated passenger counting telemetry update for any active bus.
+            </p>
+
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="text-xs font-bold text-gray-300 mb-1 block">Bus #</label>
+                <input id="cv-bus-num" type="text" class="field-input font-bold" placeholder="e.g. 400K" />
+              </div>
+              <div>
+                <label class="text-xs font-bold text-gray-300 mb-1 block">New Occupancy %</label>
+                <input id="cv-crowd-pct" type="number" min="0" max="100" class="field-input" placeholder="78" />
+              </div>
+            </div>
+
+            <button id="btn-update-cv" class="btn-secondary w-full hover:!border-amber-500 hover:!text-amber-400 font-bold">
+              ⚡ Broadcast Crowd Sensor Update
+            </button>
+          </div>
+
+        </div>
+
+        <!-- RIGHT COLUMN: Commuter Tickets & Complaints Queue (7 Cols) -->
+        <div class="lg:col-span-7">
+          <div class="glass-card p-5 space-y-4">
+            <div class="flex flex-wrap items-center justify-between gap-3 border-b border-gray-800 pb-3">
+              <div>
+                <h3 class="text-base font-extrabold text-white flex items-center gap-2">
+                  <span>🎫</span> Commuter Complaint & Incident Queue
+                </h3>
+                <p class="text-xs text-gray-400">Real-time tickets filed by citizens through the Commuter Portal</p>
+              </div>
+              <button id="btn-refresh-tickets" class="btn-secondary !py-1.5 !px-3 !text-xs flex items-center gap-1.5">
+                <span>↻</span> Refresh Tickets
+              </button>
+            </div>
+
+            <!-- Table -->
+            <div class="overflow-x-auto">
+              <table class="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr class="border-b border-gray-800 text-gray-400 uppercase tracking-wider">
+                    <th class="py-3 px-2.5">Ticket ID</th>
+                    <th class="py-3 px-2.5">Bus #</th>
+                    <th class="py-3 px-2.5">Incident Report</th>
+                    <th class="py-3 px-2.5">AI Classification</th>
+                    <th class="py-3 px-2.5">Status</th>
+                    <th class="py-3 px-2.5 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody id="tickets-tbody" class="divide-y divide-gray-800/60">
+                  <tr>
+                    <td colspan="6" class="py-8 text-center text-gray-500">Loading incident tickets...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+
+  </main>
+
+  <div id="toast" role="status"></div>
+
+  <script>
+    function resolveApiBase() {
+      const urlParams = new URLSearchParams(window.location.search);
+      const apiParam = urlParams.get('api');
+      if (apiParam) {
+        const clean = apiParam.replace(/\/+$/, '');
+        localStorage.setItem('VIZAG_API_BASE', clean);
+        return clean;
+      }
+      const saved = localStorage.getItem('VIZAG_API_BASE');
+      if (saved) return saved.replace(/\/+$/, '');
+      if (window.API_BASE) return window.API_BASE.replace(/\/+$/, '');
+      if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+        return window.location.port === '8000' ? '' : 'http://127.0.0.1:8000';
+      }
+      return '';
+    }
+    const API_BASE = resolveApiBase();
+    const $ = (id) => document.getElementById(id);
+
+    const CREDENTIALS = {
+      username: 'admin',
+      password: 'admin123'
+    };
+
+    let toastTimer;
+    function showToast(message, isError = false) {
+      const t = $('toast');
+      t.textContent = message;
+      t.style.borderColor = isError ? '#ef4444' : '#10b981';
+      t.style.color = isError ? '#fca5a5' : '#6ee7b7';
+      t.classList.add('active');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => t.classList.remove('active'), 3200);
+    }
+
+    async function apiCall(endpoint, options = null) {
+      const config = options ? {
+        ...options,
+        headers: { 'Content-Type': 'application/json', ...(options.headers || {}) }
+      } : undefined;
+      const res = await fetch(`${API_BASE}${endpoint}`, config);
+      if (!res.ok) {
+        const errText = await res.text().catch(() => '');
+        throw new Error(errText || `HTTP ${res.status}`);
+      }
+      return res.json();
+    }
+
+    const escapeHTML = (str) =>
+      String(str ?? '').replace(/[&<>"']/g, (ch) => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+      }[ch]));
+
+    // Check Auth
+    function isAuthenticated() {
+      return sessionStorage.getItem('vizag_bus_manager_logged_in') === 'true';
+    }
+
+    function renderView() {
+      if (isAuthenticated()) {
+        $('login-container').classList.add('hidden');
+        $('dashboard-container').classList.remove('hidden');
+        $('btn-logout').classList.remove('hidden');
+        loadFleetStats();
+        loadTickets();
+      } else {
+        $('login-container').classList.remove('hidden');
+        $('dashboard-container').classList.add('hidden');
+        $('btn-logout').classList.add('hidden');
+      }
+    }
+
+    $('form-login').onsubmit = (e) => {
+      e.preventDefault();
+      const enteredId = $('login-id').value.trim();
+      const enteredPass = $('login-pass').value;
+
+      if (enteredId === CREDENTIALS.username && enteredPass === CREDENTIALS.password) {
+        sessionStorage.setItem('vizag_bus_manager_logged_in', 'true');
+        $('login-error').classList.add('hidden');
+        showToast('Manager credentials verified! Opening Control Center...');
+        renderView();
+      } else {
+        const errEl = $('login-error');
+        errEl.textContent = 'Invalid User ID or Password. Access denied.';
+        errEl.classList.remove('hidden');
+        showToast('Authentication failed', true);
+      }
+    };
+
+    $('btn-logout').onclick = () => {
+      sessionStorage.removeItem('vizag_bus_manager_logged_in');
+      showToast('Logged out of operations console');
+      renderView();
+    };
+
+    // Auto-fill coordinates from preset
+    $('preset-stops').onchange = (e) => {
+      if (!e.target.value) return;
+      const [lat, lng, locName] = e.target.value.split(',');
+      $('disp-lat').value = lat;
+      $('disp-lng').value = lng;
+      $('disp-cur-loc').value = locName;
+    };
+
+    // Dispatch Bus
+    $('form-dispatch-bus').onsubmit = async (e) => {
+      e.preventDefault();
+      const form = e.target;
+      const payload = Object.fromEntries(new FormData(form));
+      ['lat', 'lng', 'eta_minutes', 'crowd_percentage'].forEach((k) => (payload[k] = Number(payload[k])));
+
+      try {
+        await apiCall('/api/admin/buses', {
+          method: 'POST',
+          body: JSON.stringify(payload)
+        });
+        form.reset();
+        showToast(`Bus ${payload.bus_number} injected into live GPS fleet!`);
+        loadFleetStats();
+      } catch (err) {
+        showToast('Failed to add bus: ' + err.message, true);
+      }
+    };
+
+    // Update Crowd Sensor
+    $('btn-update-cv').onclick = async () => {
+      const busNumber = $('cv-bus-num').value.trim();
+      const pct = Number($('cv-crowd-pct').value);
+      if (!busNumber || isNaN(pct)) return showToast('Enter valid Bus # and Crowd %', true);
+
+      try {
+        await apiCall('/api/simulate-crowd', {
+          method: 'POST',
+          body: JSON.stringify({ bus_number: busNumber, crowd_percentage: pct })
+        });
+        showToast(`Bus ${busNumber} occupancy sensor updated to ${pct}%`);
+        loadFleetStats();
+      } catch (err) {
+        showToast('Sensor update failed', true);
+      }
+    };
+
+    // Load Fleet Stats
+    async function loadFleetStats() {
+      try {
+        const res = await apiCall('/api/buses');
+        const count = res.buses ? res.buses.length : 0;
+        $('stat-active-buses').textContent = count;
+      } catch (e) {
+        $('stat-active-buses').textContent = '50+';
+      }
+    }
+
+    // Load Complaints
+    async function loadTickets() {
+      try {
+        const data = await apiCall('/api/complaints');
+        const list = data.complaints || [];
+        const openList = list.filter((c) => (c.status || 'Open').toLowerCase() !== 'resolved');
+        $('stat-open-tickets').textContent = openList.length;
+
+        const tbody = $('tickets-tbody');
+        if (!list.length) {
+          tbody.innerHTML = `<tr><td colspan="6" class="py-8 text-center text-gray-500">No commuter tickets logged in queue.</td></tr>`;
+          return;
+        }
+
+        tbody.innerHTML = list.map((c) => {
+          const tid = c.ticket_id || `TICK-${c.id}`;
+          const isOpen = (c.status || 'Open').toLowerCase() !== 'resolved';
+          const isHigh = /high/i.test(c.ai_priority || 'Medium');
+
+          return `
+            <tr class="hover:bg-white/[0.02] transition-colors">
+              <td class="py-3 px-2.5 font-bold text-cyan-400 mono">${escapeHTML(tid)}</td>
+              <td class="py-3 px-2.5 font-bold text-white">${escapeHTML(c.bus_number)}</td>
+              <td class="py-3 px-2.5 text-gray-300 max-w-[260px]">${escapeHTML(c.complaint_text)}</td>
+              <td class="py-3 px-2.5">
+                <div class="font-semibold text-gray-200">${escapeHTML(c.ai_category || 'General')}</div>
+                <span class="text-[9px] font-black uppercase px-1.5 py-0.5 rounded ${isHigh ? 'bg-red-500/20 text-red-400 border border-red-500/40' : 'bg-gray-800 text-gray-300'}">
+                  ${escapeHTML(c.ai_priority || 'Medium')}
+                </span>
+              </td>
+              <td class="py-3 px-2.5">
+                <span class="px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${isOpen ? 'bg-red-500/20 text-red-400 border border-red-500/40' : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'}">
+                  ${isOpen ? 'Active Open' : 'Resolved'}
+                </span>
+              </td>
+              <td class="py-3 px-2.5 text-right">
+                ${isOpen ? `<button class="btn-crimson !py-1 !px-2.5 !text-[11px]" data-resolve="${escapeHTML(tid)}">Mark Resolved ✓</button>` : `<span class="text-gray-500 font-semibold text-[11px]">✓ Closed</span>`}
+              </td>
+            </tr>
+          `;
+        }).join('');
+
+        tbody.querySelectorAll('[data-resolve]').forEach((btn) => {
+          btn.onclick = async () => {
+            try {
+              await apiCall(`/api/admin/tickets/${encodeURIComponent(btn.dataset.resolve)}`, {
+                method: 'PATCH',
+                body: JSON.stringify({ status: 'Resolved' })
+              });
+              showToast(`Ticket ${btn.dataset.resolve} resolved!`);
+              loadTickets();
+            } catch (err) {
+              showToast('Error updating ticket status', true);
+            }
+          };
+        });
+
+      } catch (err) {
+        $('tickets-tbody').innerHTML = `<tr><td colspan="6" class="py-8 text-center text-red-400">Failed to load ticket data from server.</td></tr>`;
+      }
+    }
+
+    $('btn-refresh-tickets').onclick = loadTickets;
+
+    // Init
+    renderView();
+  </script>
+</body>
+</html>

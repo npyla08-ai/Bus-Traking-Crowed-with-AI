@@ -1,0 +1,39 @@
+Here is a very important technical secret about Render and SQLite that you need to know for your hackathon tomorrow.
+
+Render’s free tier does not have permanent storage. Every time your backend goes to sleep and wakes up, it wipes its memory and resets exactly to what is in your GitHub repository.
+
+For a real-world company, SQLite is not recommended on Render. But for a hackathon demo, there is a perfect workaround. You just need to upload your pre-filled database directly to GitHub so Render uses it as the "default state" every time it wakes up.
+
+Here is exactly how to do it in 3 steps:
+
+Step 1: Remove the Database from .gitignore
+Right now, your GitHub is actively ignoring your database file so it doesn't get uploaded. We need to change that.
+
+Open your .gitignore file in your project folder.
+
+Find the line that says *.db (or vizag_bus.db).
+
+Delete that line and save the file.
+
+Step 2: Push the Database to GitHub
+Now, we will send your filled database to your GitHub repository. Open your Git Bash terminal and run these commands:
+
+Bash
+git add database/vizag_bus.db
+git commit -m "Uploading SQLite database for Render"
+git push origin main
+Step 3: Let Render Auto-Deploy
+Because your Render backend is connected to your GitHub, it will automatically see this new database file and rebuild your app.
+
+Go to your Render Dashboard.
+
+Click on your vizag-bus-api web service.
+
+You will see it says "Deploying...". Wait a few minutes for it to say "Live".
+
+How this will work during your Demo tomorrow:
+Reading Data: When you open your website, it will fetch the buses perfectly because the database is now inside Render.
+
+Writing Data (The Catch): If you use your POST /api/simulate-crowd endpoint to change a bus crowd to 99%, it will update immediately and show on your screen! However, if you close your laptop and the app goes to sleep for 15 minutes, the crowd will reset back to whatever was originally in your GitHub file.
+
+The Verdict: This is 100% fine for a hackathon. The judges just want to see it work live for 2 minutes.

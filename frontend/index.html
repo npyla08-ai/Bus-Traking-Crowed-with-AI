@@ -1,0 +1,2306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Vizag Bus AI – Smart Public Transit & Live Fleet Radar</title>
+  
+  <!-- Leaflet CSS & JS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  
+  <!-- Tailwind CSS & Fonts -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet" />
+
+  <style>
+    /* ==========================================================================
+       CYBER-COASTAL THEME & ANIMATIONS (VIZAG BUS AI 2.0)
+       ========================================================================== */
+    :root {
+      --bg-deep: #070B14;
+      --bg-surface: #0E1626;
+      --bg-glass: rgba(14, 22, 38, 0.78);
+      --bg-card: rgba(18, 28, 48, 0.65);
+      --accent-cyan: #06B6D4;
+      --accent-sky: #38BDF8;
+      --accent-indigo: #6366F1;
+      --accent-purple: #8B5CF6;
+      --accent-emerald: #10B981;
+      --accent-amber: #F59E0B;
+      --accent-rose: #F43F5E;
+      --border-soft: rgba(255, 255, 255, 0.08);
+      --border-bright: rgba(56, 189, 248, 0.35);
+      --text-main: #FFFFFF;
+      --text-muted: #94A3B8;
+      --glow-cyan: 0 0 25px rgba(6, 182, 212, 0.35);
+      --glow-indigo: 0 0 25px rgba(99, 102, 241, 0.35);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      background-color: var(--bg-deep);
+      color: var(--text-main);
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      min-height: 100vh;
+      overflow-x: hidden;
+      background-image: 
+        radial-gradient(circle at 10% 10%, rgba(6, 182, 212, 0.12) 0%, transparent 45%),
+        radial-gradient(circle at 90% 20%, rgba(99, 102, 241, 0.12) 0%, transparent 45%),
+        radial-gradient(circle at 50% 90%, rgba(16, 185, 129, 0.08) 0%, transparent 50%);
+      background-attachment: fixed;
+    }
+
+    /* Glassmorphism Panel */
+    .glass-panel {
+      background: var(--bg-glass);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid var(--border-soft);
+      border-radius: 18px;
+      box-shadow: 0 20px 45px -15px rgba(0, 0, 0, 0.6);
+      transition: all 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .glass-panel:hover {
+      border-color: rgba(255, 255, 255, 0.14);
+    }
+
+    /* Keyframe Animations */
+    @keyframes pulseGlow {
+      0%, 100% { box-shadow: 0 0 15px rgba(6, 182, 212, 0.4); transform: scale(1); }
+      50% { box-shadow: 0 0 25px rgba(6, 182, 212, 0.8); transform: scale(1.02); }
+    }
+
+    @keyframes radarPulse {
+      0% { transform: scale(0.95); opacity: 0.9; box-shadow: 0 0 0 0 rgba(6, 182, 212, 0.7); }
+      70% { transform: scale(1.3); opacity: 0; box-shadow: 0 0 0 20px rgba(6, 182, 212, 0); }
+      100% { transform: scale(0.95); opacity: 0; }
+    }
+
+    @keyframes floatGentle {
+      0%, 100% { transform: translateY(0px); }
+      50% { transform: translateY(-4px); }
+    }
+
+    @keyframes slideInUp {
+      from { opacity: 0; transform: translateY(12px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .animate-slide-up {
+      animation: slideInUp 0.32s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+
+    .radar-pulse-ring {
+      animation: radarPulse 2s infinite ease-out;
+    }
+
+    /* Interactive Swap Button Animation */
+    .btn-swap {
+      transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1), background 0.2s ease, border-color 0.2s ease;
+    }
+    .btn-swap:hover {
+      transform: rotate(180deg) scale(1.1);
+      border-color: var(--accent-sky);
+      background: rgba(6, 182, 212, 0.25);
+    }
+    .btn-swap:active {
+      transform: rotate(180deg) scale(0.95);
+    }
+
+    /* Form Inputs with Clear Button */
+    .input-wrapper {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+
+    .field-input {
+      width: 100%;
+      background: rgba(14, 22, 38, 0.9);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 12px;
+      padding: 0.75rem 2.4rem 0.75rem 2.5rem;
+      color: #FFFFFF;
+      font-size: 0.88rem;
+      outline: none;
+      transition: all 0.22s ease;
+    }
+
+    .field-input:focus {
+      border-color: var(--accent-sky);
+      background: rgba(18, 28, 48, 0.95);
+      box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.25);
+    }
+
+    .btn-clear-input {
+      position: absolute;
+      right: 0.75rem;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.12);
+      color: #CBD5E1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      font-weight: 700;
+      cursor: pointer;
+      opacity: 0;
+      pointer-events: none;
+      transition: all 0.18s ease;
+    }
+    .btn-clear-input.visible {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .btn-clear-input:hover {
+      background: rgba(239, 68, 68, 0.8);
+      color: #FFFFFF;
+    }
+
+    /* Buttons */
+    .btn-primary {
+      background: linear-gradient(135deg, #0EA5E9 0%, #6366F1 100%);
+      color: #FFFFFF;
+      font-weight: 700;
+      border-radius: 12px;
+      padding: 0.72rem 1.25rem;
+      font-size: 0.88rem;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      cursor: pointer;
+      transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+      box-shadow: 0 6px 20px rgba(14, 165, 233, 0.35);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+    }
+
+    .btn-primary:hover {
+      filter: brightness(1.12);
+      transform: translateY(-2px);
+      box-shadow: 0 10px 25px rgba(14, 165, 233, 0.5);
+    }
+
+    .btn-primary:active {
+      transform: translateY(0);
+    }
+
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.06);
+      color: #E2E8F0;
+      font-weight: 600;
+      border-radius: 12px;
+      padding: 0.72rem 1.2rem;
+      font-size: 0.88rem;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.45rem;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.12);
+      color: #FFFFFF;
+      border-color: rgba(56, 189, 248, 0.4);
+      transform: translateY(-1px);
+    }
+
+    .btn-ghost {
+      background: transparent;
+      color: #CBD5E1;
+      padding: 0.5rem 0.85rem;
+      border-radius: 10px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      border: 1px solid transparent;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .btn-ghost:hover {
+      background: rgba(255, 255, 255, 0.08);
+      color: #FFFFFF;
+      border-color: rgba(255, 255, 255, 0.1);
+    }
+
+    /* Sub-tabs */
+    .tab-pill {
+      padding: 0.6rem 1.1rem;
+      font-size: 0.82rem;
+      font-weight: 700;
+      border-radius: 10px;
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+      cursor: pointer;
+      color: #94A3B8;
+      border: 1px solid transparent;
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+    }
+
+    .tab-pill:hover {
+      color: #FFFFFF;
+      background: rgba(255, 255, 255, 0.05);
+    }
+
+    .tab-pill.active {
+      background: linear-gradient(135deg, rgba(14, 165, 233, 0.25) 0%, rgba(99, 102, 241, 0.25) 100%);
+      color: #38BDF8;
+      border-color: rgba(56, 189, 248, 0.45);
+      box-shadow: 0 4px 18px rgba(14, 165, 233, 0.25);
+    }
+
+    /* Quick Destination Chips */
+    .dest-chip {
+      padding: 0.35rem 0.75rem;
+      font-size: 0.74rem;
+      font-weight: 700;
+      border-radius: 9999px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      color: #CBD5E1;
+      cursor: pointer;
+      transition: all 0.18s ease;
+      white-space: nowrap;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+    }
+
+    .dest-chip:hover {
+      background: rgba(6, 182, 212, 0.2);
+      border-color: var(--accent-cyan);
+      color: #FFFFFF;
+      transform: translateY(-1px);
+    }
+
+    .dest-chip.active {
+      background: linear-gradient(135deg, #0EA5E9 0%, #6366F1 100%);
+      color: #FFFFFF;
+      border-color: rgba(255, 255, 255, 0.3);
+      box-shadow: 0 2px 10px rgba(14, 165, 233, 0.4);
+    }
+
+    /* Corridor filter pills */
+    .corridor-pill {
+      padding: 0.32rem 0.75rem;
+      font-size: 0.75rem;
+      font-weight: 700;
+      border-radius: 9999px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      color: #94A3B8;
+      cursor: pointer;
+      transition: all 0.18s ease;
+    }
+
+    .corridor-pill:hover, .corridor-pill.active {
+      background: var(--accent-cyan);
+      color: #070B14;
+      font-weight: 800;
+      border-color: var(--accent-cyan);
+      transform: translateY(-1px);
+      box-shadow: 0 2px 12px rgba(6, 182, 212, 0.4);
+    }
+
+    /* Autocomplete Dropdown */
+    .autocomplete-box {
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: calc(100% + 6px);
+      z-index: 1500;
+      background: #0E1626;
+      border: 1px solid rgba(56, 189, 248, 0.4);
+      border-radius: 12px;
+      max-height: 240px;
+      overflow-y: auto;
+      box-shadow: 0 16px 36px rgba(0, 0, 0, 0.85);
+      backdrop-filter: blur(16px);
+    }
+
+    .autocomplete-item {
+      padding: 0.65rem 0.95rem;
+      font-size: 0.85rem;
+      cursor: pointer;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      transition: background 0.12s ease;
+    }
+
+    .autocomplete-item:hover {
+      background-color: rgba(6, 182, 212, 0.22);
+      color: #FFFFFF;
+    }
+
+    /* Map Styling */
+    #map {
+      height: 570px;
+      width: 100%;
+      border-radius: 16px;
+      z-index: 1;
+      background: #070B14;
+    }
+
+    .bus-marker-modern {
+      background: rgba(14, 22, 38, 0.92);
+      backdrop-filter: blur(8px);
+      border-radius: 10px;
+      padding: 4px 8px;
+      color: #FFFFFF;
+      font-weight: 800;
+      font-size: 11px;
+      text-align: center;
+      white-space: nowrap;
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.6);
+      cursor: pointer;
+      transition: transform 0.2s ease;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1px;
+    }
+
+    .bus-marker-modern:hover {
+      transform: scale(1.15) translateY(-2px);
+      z-index: 9999 !important;
+    }
+
+    .stop-marker-pin {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: #0E1626;
+      border: 2px solid var(--accent-cyan);
+      color: #38BDF8;
+      font-size: 10px;
+      font-weight: 800;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 0 12px rgba(6, 182, 212, 0.7);
+      cursor: pointer;
+    }
+
+    .user-pulse-marker {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: #38BDF8;
+      border: 2px solid #FFFFFF;
+      box-shadow: 0 0 0 0 rgba(56, 189, 248, 0.9);
+      animation: userRadar 1.8s infinite;
+    }
+
+    @keyframes userRadar {
+      70% { box-shadow: 0 0 0 20px rgba(56, 189, 248, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(56, 189, 248, 0); }
+    }
+
+    /* Stepper for ordered route stops */
+    .stop-stepper {
+      position: relative;
+      padding-left: 1.85rem;
+    }
+
+    .stop-stepper::before {
+      content: '';
+      position: absolute;
+      left: 0.65rem;
+      top: 0.8rem;
+      bottom: 0.8rem;
+      width: 2px;
+      background: linear-gradient(180deg, #0EA5E9 0%, #6366F1 100%);
+    }
+
+    .stop-node {
+      position: relative;
+      padding-bottom: 1.1rem;
+    }
+
+    .stop-node:last-child { padding-bottom: 0; }
+
+    .stop-node-dot {
+      position: absolute;
+      left: -1.85rem;
+      top: 0.2rem;
+      width: 1.35rem;
+      height: 1.35rem;
+      border-radius: 50%;
+      background: #0E1626;
+      border: 2px solid #38BDF8;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 9px;
+      font-weight: 800;
+      color: #E2E8F0;
+    }
+
+    .stop-node.origin .stop-node-dot {
+      background: #10B981;
+      border-color: #A7F3D0;
+      color: #070B14;
+      box-shadow: 0 0 10px #10B981;
+    }
+
+    .stop-node.destination .stop-node-dot {
+      background: #F43F5E;
+      border-color: #FECDD3;
+      color: #FFFFFF;
+      box-shadow: 0 0 10px #F43F5E;
+    }
+
+    /* Toast Notification */
+    #toast {
+      position: fixed;
+      bottom: 1.5rem;
+      right: 1.5rem;
+      z-index: 9999;
+      padding: 0.85rem 1.35rem;
+      border-radius: 14px;
+      font-weight: 700;
+      font-size: 0.88rem;
+      transform: translateY(160%);
+      transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+      box-shadow: 0 15px 35px rgba(0, 0, 0, 0.8);
+      background: rgba(14, 22, 38, 0.95);
+      border: 1px solid rgba(56, 189, 248, 0.4);
+      color: #FFFFFF;
+      backdrop-filter: blur(12px);
+    }
+    #toast.active { transform: translateY(0); }
+
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.15); border-radius: 99px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(56, 189, 248, 0.4); }
+  </style>
+</head>
+<body class="p-3 md:p-6 lg:p-7 space-y-5">
+
+  <!-- ========================================================================
+       TOP NAVIGATION BAR
+       ======================================================================== -->
+  <header class="glass-panel p-3.5 px-4 md:px-6 flex flex-wrap items-center justify-between gap-4 max-w-7xl mx-auto border-cyan-500/20">
+    <div class="flex items-center gap-3">
+      <!-- Animated Brand Badge -->
+      <div class="relative w-11 h-11 rounded-2xl flex items-center justify-center font-black text-lg text-white overflow-hidden shadow-lg shadow-cyan-500/30" style="background: linear-gradient(135deg, #06B6D4 0%, #6366F1 100%);">
+        <span>VB</span>
+        <div class="absolute inset-0 bg-white/20 opacity-0 hover:opacity-100 transition-opacity"></div>
+      </div>
+      <div>
+        <div class="flex items-center gap-2">
+          <span class="text-lg md:text-xl font-extrabold tracking-tight">VIZAG <span class="text-cyan-400">BUS</span> <span class="text-indigo-400">AI</span></span>
+          <span class="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-cyan-400/20 text-cyan-300 border border-cyan-400/40">COMMUTER 2.0</span>
+        </div>
+        <p id="header-subtitle" class="text-xs text-slate-400 hidden sm:block">
+          Greater Visakhapatnam Smart Public Transit • 70+ Stops • 30+ Express Bus Lines
+        </p>
+      </div>
+    </div>
+
+    <!-- Right Controls -->
+    <div class="flex items-center gap-2.5">
+      <!-- Language Toggle -->
+      <button id="btn-lang-toggle" class="btn-ghost !px-3 !py-1.5 text-xs font-bold flex items-center gap-1.5 border-white/10" title="Switch Language">
+        🌐 <span id="lang-btn-text">తెలుగు</span>
+      </button>
+
+      <!-- 24x7 SOS Modal -->
+      <button id="btn-open-sos" class="btn-ghost !px-3 !py-1.5 text-xs font-bold text-rose-400 hover:text-white hover:!bg-rose-500/20 border-rose-500/30" title="Emergency Transit Helplines">
+        🚨 SOS
+      </button>
+
+      <!-- Separate Management Link -->
+      <a href="management.html" class="btn-secondary !py-1.5 !px-3 !text-xs font-bold text-cyan-300 hover:!border-cyan-400 hover:!text-white flex items-center gap-1" title="Fleet Operations Control Center">
+        <span>Transit Ops</span>
+        <span class="text-[10px]">↗</span>
+      </a>
+
+      <!-- Live Network Status Dot -->
+      <div class="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-900/80 border border-white/10 text-xs font-semibold">
+        <span id="status-dot" class="w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-sm shadow-emerald-400/80"></span>
+        <span id="status-text" class="text-slate-300">Live Network</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- ========================================================================
+       MAIN APP CONTAINER
+       ======================================================================== -->
+  <main class="max-w-7xl mx-auto space-y-5">
+
+    <!-- SUB-TABS NAVIGATION -->
+    <div class="glass-panel p-2 flex flex-wrap items-center justify-between gap-3">
+      <div class="flex flex-wrap items-center gap-1.5">
+        <button id="tab-btn-planner" class="tab-pill active" onclick="switchCommuterSubTab('planner')">
+          <span>🎯</span> <span id="label-tab-planner">Journey Finder & Live Radar</span>
+        </button>
+        <button id="tab-btn-explorer" class="tab-pill" onclick="switchCommuterSubTab('explorer')">
+          <span>🚏</span> <span id="label-tab-explorer">Bus Routes & Stop Stepper</span>
+        </button>
+        <button id="tab-btn-directory" class="tab-pill" onclick="switchCommuterSubTab('directory')">
+          <span>🏛️</span> <span id="label-tab-directory">Stop Directory (Which Buses Halt Here?)</span>
+        </button>
+        <button id="tab-btn-grievance" class="tab-pill" onclick="switchCommuterSubTab('grievance')">
+          <span>🎫</span> <span id="label-tab-grievance">Complaint Box</span>
+        </button>
+      </div>
+
+      <div class="flex items-center gap-2 text-xs text-slate-400 px-2">
+        <span class="hidden sm:inline">Fleet Coverage:</span>
+        <span class="font-bold text-white px-2 py-0.5 rounded bg-slate-800/80 border border-white/10">70 Stops</span>
+        <span class="font-bold text-cyan-300 px-2 py-0.5 rounded bg-cyan-950/60 border border-cyan-500/30">30 Routes</span>
+        <span id="live-fleet-badge" class="font-bold text-emerald-400 px-2 py-0.5 rounded bg-emerald-950/60 border border-emerald-500/30">50+ Active Buses</span>
+      </div>
+    </div>
+
+    <!-- MAIN TWO-COLUMN COMMUTER GRID -->
+    <div class="grid lg:grid-cols-12 gap-5 items-start">
+
+      <!-- ====================================================================
+           LEFT COLUMN: INTERACTIVE MAP & FLEET RADAR (7 Cols)
+           ==================================================================== -->
+      <div class="lg:col-span-7 space-y-4">
+        <div class="glass-panel p-3.5 space-y-3 relative">
+
+          <!-- Map Header Controls -->
+          <div class="flex flex-wrap items-center justify-between gap-2 px-1">
+            <div class="flex items-center gap-2">
+              <span class="w-2.5 h-2.5 rounded-full bg-cyan-400 shadow-sm shadow-cyan-400"></span>
+              <span id="map-status-label" class="text-xs font-bold uppercase tracking-wider text-cyan-300">
+                Live Vizag Fleet Radar
+              </span>
+            </div>
+
+            <div class="flex flex-wrap items-center gap-1.5">
+              <button id="btn-reset-map" class="btn-ghost !py-1 !px-2.5 !text-xs hidden text-cyan-400 border-cyan-400/30">
+                Show All Buses
+              </button>
+              <button id="btn-live-simulation" class="btn-secondary !py-1 !px-2.5 !text-xs font-bold flex items-center gap-1.5 border-cyan-500/30 text-cyan-300">
+                <span id="radar-icon">⚡</span>
+                <span id="radar-label">Radar: ON</span>
+              </button>
+              <button id="btn-locate" class="btn-primary !py-1 !px-2.5 !text-xs">
+                📍 Locate Me
+              </button>
+              <button id="btn-nearest" class="btn-secondary !py-1 !px-2.5 !text-xs">
+                🚏 Nearest Stop
+              </button>
+            </div>
+          </div>
+
+          <!-- Corridor Quick Filter Chips -->
+          <div class="flex flex-wrap items-center gap-1.5 py-1.5 border-t border-b border-white/10 text-xs">
+            <span id="corridors-label" class="text-slate-400 font-semibold mr-1">Corridors:</span>
+            <button class="corridor-pill active" data-corridor="ALL" onclick="filterByCorridor('ALL', this)">All GVMC</button>
+            <button class="corridor-pill" data-corridor="South" onclick="filterByCorridor('South', this)">South / Gajuwaka</button>
+            <button class="corridor-pill" data-corridor="Beach" onclick="filterByCorridor('Beach', this)">Beach Road</button>
+            <button class="corridor-pill" data-corridor="West" onclick="filterByCorridor('West', this)">Simhachalam / West</button>
+            <button class="corridor-pill" data-corridor="North" onclick="filterByCorridor('North', this)">Madhurawada / North</button>
+            <button class="corridor-pill" data-corridor="Central" onclick="filterByCorridor('Central', this)">Central Vizag</button>
+          </div>
+
+          <!-- Leaflet Interactive Map -->
+          <div id="map" class="shadow-inner"></div>
+
+          <!-- Map Footer / Legend -->
+          <div class="flex flex-wrap items-center justify-between gap-3 pt-1 px-1 text-xs text-slate-400">
+            <div class="flex items-center gap-3">
+              <span class="flex items-center gap-1.5"><i class="w-2.5 h-2.5 rounded-full inline-block bg-emerald-500"></i> <span id="legend-comfort">Comfortable (&lt;45%)</span></span>
+              <span class="flex items-center gap-1.5"><i class="w-2.5 h-2.5 rounded-full inline-block bg-amber-500"></i> <span id="legend-moderate">Moderate (45–74%)</span></span>
+              <span class="flex items-center gap-1.5"><i class="w-2.5 h-2.5 rounded-full inline-block bg-rose-500"></i> <span id="legend-crowded">Overcrowded (75%+)</span></span>
+            </div>
+            <span id="map-hint-text" class="text-[11px] text-slate-500">Click any bus pin or stop to inspect details</span>
+          </div>
+
+        </div>
+
+        <!-- MULTI-BUS LINE TIMELINE (Appears when single bus line is selected) -->
+        <div id="line-timeline-card" class="glass-panel p-4 space-y-3 hidden animate-slide-up border-cyan-500/30">
+          <div class="flex items-center justify-between border-b border-white/10 pb-2.5">
+            <div>
+              <h3 id="timeline-title" class="text-sm font-extrabold text-cyan-300">Bus Line Status</h3>
+              <p id="timeline-subtitle" class="text-xs text-slate-400">Live arrival times for all active buses on this route</p>
+            </div>
+            <div class="flex items-center gap-2">
+              <button id="btn-view-line-stops" class="btn-primary !py-1 !px-2.5 !text-xs">
+                🚏 View All Stops
+              </button>
+              <button id="btn-close-timeline" class="btn-ghost !py-1 !px-2 !text-xs">
+                ✕ Close
+              </button>
+            </div>
+          </div>
+          <div id="timeline-list" class="grid sm:grid-cols-2 gap-2.5"></div>
+        </div>
+
+      </div>
+
+      <!-- ====================================================================
+           RIGHT COLUMN: COMMUTER PANELS (5 Cols)
+           ==================================================================== -->
+      <div class="lg:col-span-5 space-y-4">
+
+        <!-- ------------------------------------------------------------------
+             PANEL 1: JOURNEY FINDER & ROUTE TOGGLE / SWAP
+             ------------------------------------------------------------------ -->
+        <div id="panel-planner" class="space-y-4">
+          <div class="glass-panel p-4 md:p-5 space-y-4 border-cyan-500/30">
+
+            <div class="flex items-center justify-between border-b border-white/10 pb-3">
+              <div>
+                <h2 id="label-planner-title" class="text-base font-extrabold text-white flex items-center gap-2">
+                  <span>🎯</span> Smart Transit Finder
+                </h2>
+                <p id="label-planner-sub" class="text-xs text-slate-400">Search direct & connecting buses across 70 Vizag stops</p>
+              </div>
+              <span id="planner-badge" class="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded bg-cyan-400/20 text-cyan-300 border border-cyan-400/40">DIRECT + CONNECTING</span>
+            </div>
+
+            <!-- ORIGIN & DESTINATION WITH ANIMATED SWAP TOGGLE -->
+            <div class="space-y-3 relative">
+
+              <!-- From / Origin Input -->
+              <div class="space-y-1">
+                <label id="label-from" class="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                  <span class="w-2 h-2 rounded-full bg-emerald-400 inline-block shadow-sm shadow-emerald-400"></span>
+                  From Stop / Origin
+                </label>
+                <div class="input-wrapper">
+                  <span class="absolute left-3 text-emerald-400 text-sm">📍</span>
+                  <input id="input-src" type="text" class="field-input" placeholder="Type origin (e.g. Gajuwaka, NAD, RTC Complex)..." autocomplete="off" />
+                  <button id="btn-clear-src" type="button" class="btn-clear-input" title="Clear Origin">✕</button>
+                  <div id="sug-src" class="autocomplete-box hidden"></div>
+                </div>
+              </div>
+
+              <!-- Animated Swap / Toggle Button Centered -->
+              <div class="flex items-center justify-between px-2 pt-0.5">
+                <div class="h-[1px] flex-1 bg-gradient-to-r from-transparent via-white/15 to-transparent"></div>
+                <button id="btn-swap-stops" type="button" class="btn-swap mx-3 w-8 h-8 rounded-full bg-slate-800/90 border border-white/15 text-cyan-300 flex items-center justify-center shadow-lg" title="Swap Origin and Destination ⇄">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
+                  </svg>
+                </button>
+                <div class="h-[1px] flex-1 bg-gradient-to-r from-transparent via-white/15 to-transparent"></div>
+              </div>
+
+              <!-- To / Destination Input -->
+              <div class="space-y-1">
+                <label id="label-to" class="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                  <span class="w-2 h-2 rounded-full bg-rose-400 inline-block shadow-sm shadow-rose-400"></span>
+                  To Stop / Destination
+                </label>
+                <div class="input-wrapper">
+                  <span class="absolute left-3 text-rose-400 text-sm">🏁</span>
+                  <input id="input-dst" type="text" class="field-input" placeholder="Type destination (e.g. Siripuram, RK Beach, Rushikonda)..." autocomplete="off" />
+                  <button id="btn-clear-dst" type="button" class="btn-clear-input" title="Clear Destination">✕</button>
+                  <div id="sug-dst" class="autocomplete-box hidden"></div>
+                </div>
+              </div>
+
+              <!-- Quick Destination Switcher Pills -->
+              <div class="space-y-1.5 pt-1">
+                <div class="flex items-center justify-between text-[11px] text-slate-400">
+                  <span id="quick-dest-label" class="font-semibold text-cyan-300">Quick Destination Switch:</span>
+                  <span class="text-[10px] text-slate-500">Tap to select & search</span>
+                </div>
+                <div class="flex flex-wrap gap-1.5">
+                  <button type="button" class="dest-chip" onclick="quickSelectDestination('RK Beach')">🏖️ RK Beach</button>
+                  <button type="button" class="dest-chip" onclick="quickSelectDestination('Visakhapatnam Airport')">✈️ Airport</button>
+                  <button type="button" class="dest-chip" onclick="quickSelectDestination('Siripuram Junction')">🏛️ Siripuram</button>
+                  <button type="button" class="dest-chip" onclick="quickSelectDestination('Rushikonda Beach Stop')">🌊 Rushikonda</button>
+                  <button type="button" class="dest-chip" onclick="quickSelectDestination('Simhachalam Foothills')">🛕 Simhachalam</button>
+                  <button type="button" class="dest-chip" onclick="quickSelectDestination('RTC Complex (Dwaraka Nagar)')">🏬 RTC Complex</button>
+                  <button type="button" class="dest-chip" onclick="quickSelectDestination('Gajuwaka Junction')">🏭 Gajuwaka</button>
+                  <button type="button" class="dest-chip" onclick="quickSelectDestination('Maddilapalem')">🎓 Maddilapalem</button>
+                </div>
+              </div>
+
+            </div>
+
+            <!-- Search Actions -->
+            <div class="flex gap-2 pt-2">
+              <button id="btn-search" class="btn-primary flex-1">
+                <span>🔍</span> <span id="btn-search-text">Find Connecting Buses</span>
+              </button>
+              <button id="btn-show-all" class="btn-secondary !px-3" title="Clear search & reset">
+                <span>↺</span> <span id="btn-reset-text">Reset</span>
+              </button>
+            </div>
+
+            <!-- ACTIVE ROUTE CONTROLLER (Appears when route is searched) -->
+            <div id="active-route-bar" class="hidden p-2.5 rounded-xl bg-cyan-950/40 border border-cyan-500/40 flex items-center justify-between gap-2 text-xs">
+              <div class="flex items-center gap-1.5 truncate">
+                <span class="text-cyan-400 font-extrabold">Active:</span>
+                <span id="active-route-src" class="text-white font-bold truncate">Origin</span>
+                <span class="text-cyan-400">➔</span>
+                <span id="active-route-dst" class="text-white font-bold truncate">Destination</span>
+              </div>
+              <div class="flex items-center gap-1.5 shrink-0">
+                <button id="btn-swap-inline" class="px-2 py-1 rounded-lg bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 font-bold text-[11px] hover:bg-cyan-500 hover:text-black transition-colors" title="Reverse Route">
+                  ⇄ Swap
+                </button>
+                <button id="btn-clear-route" class="px-2 py-1 rounded-lg bg-white/5 text-slate-300 border border-white/10 font-bold text-[11px] hover:bg-rose-500/20 hover:text-rose-300 transition-colors" title="Change Destination">
+                  ✕ Change
+                </button>
+              </div>
+            </div>
+
+            <!-- Smart Route Advice & Fare Estimate -->
+            <div id="route-summary-box" class="hidden p-3.5 rounded-xl text-xs space-y-2 bg-slate-900/90 border border-indigo-500/40 animate-slide-up">
+              <div class="flex items-center justify-between">
+                <span id="route-summary-title" class="font-extrabold flex items-center gap-1.5 text-indigo-300">
+                  📊 Transit Recommendation & Fare
+                </span>
+                <span id="sum-fare-est" class="text-[11px] font-black px-2 py-0.5 rounded bg-indigo-950 text-indigo-300 border border-indigo-500/50">APSRTC ₹15 – ₹30</span>
+              </div>
+              <div id="sum-advice-text" class="text-slate-200 text-[11px] leading-relaxed whitespace-pre-line"></div>
+            </div>
+
+            <!-- Search Results Container (Empty by default until search) -->
+            <div id="search-results" class="space-y-2.5 max-h-[380px] overflow-y-auto pr-1"></div>
+
+          </div>
+        </div>
+
+        <!-- ------------------------------------------------------------------
+             PANEL 2: BUS ROUTE & STOPS EXPLORER
+             ------------------------------------------------------------------ -->
+        <div id="panel-explorer" class="space-y-4 hidden">
+          <div class="glass-panel p-4 md:p-5 space-y-4 border-cyan-500/30">
+
+            <div class="flex items-center justify-between border-b border-white/10 pb-3">
+              <div>
+                <h2 id="label-explorer-title" class="text-base font-extrabold text-white flex items-center gap-2">
+                  <span>🚏</span> Bus Route & Stops Explorer
+                </h2>
+                <p id="label-explorer-sub" class="text-xs text-slate-400">Inspect complete stop-by-stop route sequence for any bus number</p>
+              </div>
+              <span class="text-[10px] font-black uppercase px-2 py-0.5 rounded bg-cyan-400/20 text-cyan-300 border border-cyan-400/40">ROUTE INSPECTOR</span>
+            </div>
+
+            <!-- Select Bus Number -->
+            <div class="space-y-2">
+              <label id="label-select-bus" class="text-xs font-bold text-slate-300 block">Select or Choose a Bus Line</label>
+              <div class="flex gap-2">
+                <select id="select-bus-number" class="field-input font-bold text-xs flex-1 !pl-3">
+                  <option value="">-- Choose a Bus Line (30 Routes) --</option>
+                </select>
+                <button id="btn-inspect-bus" class="btn-primary !px-3.5 !text-xs">
+                  Inspect Stops
+                </button>
+              </div>
+            </div>
+
+            <!-- Quick Line Chips -->
+            <div>
+              <label class="text-[11px] font-semibold text-cyan-300 block mb-1.5">Popular Vizag Bus Lines:</label>
+              <div class="flex flex-wrap gap-1.5">
+                <button class="dest-chip" onclick="selectQuickRoute('400K')">400K (Gajuwaka)</button>
+                <button class="dest-chip" onclick="selectQuickRoute('900K')">900K (Beach Road)</button>
+                <button class="dest-chip" onclick="selectQuickRoute('28A')">28A (Simhachalam)</button>
+                <button class="dest-chip" onclick="selectQuickRoute('38')">38 (Kurmannapalem)</button>
+                <button class="dest-chip" onclick="selectQuickRoute('222')">222 (Madhurawada)</button>
+                <button class="dest-chip" onclick="selectQuickRoute('500')">500 (Pendurthi)</button>
+                <button class="dest-chip" onclick="selectQuickRoute('60C')">60C (RK Beach)</button>
+                <button class="dest-chip" onclick="selectQuickRoute('88K')">88K (Atchutapuram)</button>
+              </div>
+            </div>
+
+            <!-- Inspected Route Details -->
+            <div id="explorer-details" class="space-y-3.5 pt-1 hidden animate-slide-up">
+              <!-- Route Banner -->
+              <div class="p-3.5 rounded-xl space-y-2 bg-slate-900/90 border border-cyan-500/40">
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-2">
+                    <span id="exp-bus-badge" class="px-2 py-0.5 rounded text-xs font-black bg-cyan-500 text-slate-950">400K</span>
+                    <span id="exp-bus-type" class="text-xs font-bold text-cyan-300">Metro Express</span>
+                  </div>
+                  <span id="exp-bus-frequency" class="text-xs text-slate-400 font-medium">Every 8 mins</span>
+                </div>
+
+                <div>
+                  <h3 id="exp-route-title" class="text-sm font-extrabold text-white">Gajuwaka Junction ➔ Maddilapalem</h3>
+                  <p id="exp-route-via" class="text-xs text-slate-300 mt-0.5">Via Airport, NAD Junction, RTC Complex, Siripuram</p>
+                </div>
+
+                <div class="grid grid-cols-3 gap-2 pt-2 text-[11px] text-slate-300 border-t border-white/10">
+                  <div>
+                    <span class="text-slate-500 block">Total Stops:</span>
+                    <b id="exp-total-stops" class="text-white">12 Stops</b>
+                  </div>
+                  <div>
+                    <span class="text-slate-500 block">Fare Range:</span>
+                    <b id="exp-fare-range" class="text-cyan-300">₹10 – ₹30</b>
+                  </div>
+                  <div>
+                    <span class="text-slate-500 block">Active Buses:</span>
+                    <b id="exp-active-count" class="text-emerald-400">5 Live</b>
+                  </div>
+                </div>
+
+                <div class="pt-1 flex gap-2">
+                  <button id="btn-trace-map" class="btn-primary flex-1 !py-1.5 !text-xs">
+                    🗺️ Trace Route & Stops on Map
+                  </button>
+                  <button id="btn-copy-stops" class="btn-secondary !py-1.5 !px-3 !text-xs">
+                    📋 Copy Stops
+                  </button>
+                </div>
+              </div>
+
+              <!-- Ordered Stops Stepper -->
+              <div class="space-y-2">
+                <div class="flex items-center justify-between text-xs font-bold text-slate-200 px-1">
+                  <span>Ordered Stops Along Route</span>
+                  <span class="text-[11px] text-slate-400">Distance & ETA</span>
+                </div>
+                <div id="stops-stepper-container" class="stop-stepper max-h-[380px] overflow-y-auto pr-2 space-y-1"></div>
+              </div>
+            </div>
+
+            <!-- Empty Placeholder -->
+            <div id="explorer-placeholder" class="p-8 text-center rounded-xl space-y-2 bg-slate-900/60 border border-dashed border-white/15">
+              <div class="text-3xl">🚌</div>
+              <div class="text-xs font-bold text-white">Select a Bus Line Above</div>
+              <p class="text-[11px] text-slate-400 max-w-xs mx-auto">
+                Choose any line (400K, 900K, 28A, 38, etc.) to see all stops along its route with distances and live approaching buses!
+              </p>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- ------------------------------------------------------------------
+             PANEL 3: STOP DIRECTORY (WHICH BUSES HALT HERE?)
+             ------------------------------------------------------------------ -->
+        <div id="panel-directory" class="space-y-4 hidden">
+          <div class="glass-panel p-4 md:p-5 space-y-4 border-cyan-500/30">
+
+            <div class="flex items-center justify-between border-b border-white/10 pb-3">
+              <div>
+                <h2 id="label-directory-title" class="text-base font-extrabold text-white flex items-center gap-2">
+                  <span>🏛️</span> Vizag Stop Directory
+                </h2>
+                <p id="label-directory-sub" class="text-xs text-slate-400">Select any stop to view all bus numbers passing through it</p>
+              </div>
+              <span class="text-[10px] font-black uppercase px-2 py-0.5 rounded bg-cyan-400/20 text-cyan-300 border border-cyan-400/40">DIRECTORY</span>
+            </div>
+
+            <!-- Select Stop -->
+            <div class="space-y-2">
+              <label class="text-xs font-bold text-slate-300 block">Choose a Visakhapatnam Bus Stop</label>
+              <div class="flex gap-2">
+                <select id="select-stop-directory" class="field-input font-bold text-xs flex-1 !pl-3">
+                  <option value="">-- Select from 70+ Vizag Stops --</option>
+                </select>
+                <button id="btn-inspect-stop" class="btn-secondary !px-3.5 !text-xs">
+                  View Buses
+                </button>
+              </div>
+            </div>
+
+            <!-- Passing Buses Output -->
+            <div id="stop-buses-output" class="space-y-2.5 max-h-[420px] overflow-y-auto pr-1">
+              <div id="directory-placeholder" class="p-8 text-center text-xs text-slate-400 rounded-xl bg-slate-900/60 border border-dashed border-white/15">
+                Select any stop above (e.g. NAD Junction, Siripuram, Maddilapalem, Gajuwaka) to list all bus services halting there.
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- ------------------------------------------------------------------
+             PANEL 4: COMPLAINT BOX (PASSENGER TICKETS)
+             ------------------------------------------------------------------ -->
+        <div id="panel-grievance" class="space-y-4 hidden">
+          <div class="glass-panel p-4 md:p-5 space-y-4 border-cyan-500/30">
+
+            <div class="flex items-center justify-between border-b border-white/10 pb-3">
+              <div>
+                <h2 id="label-grievance-title" class="text-base font-extrabold text-white flex items-center gap-2">
+                  <span>🎫</span> Complaint Box - Submit Ticket
+                </h2>
+                <p id="label-grievance-sub" class="text-xs text-slate-400">Submit transit issues or feedback directly to municipal fleet management</p>
+              </div>
+              <span class="text-[10px] font-black uppercase px-2 py-0.5 rounded bg-cyan-400/20 text-cyan-300 border border-cyan-400/40">AUTO-TICKET</span>
+            </div>
+
+            <div class="space-y-3">
+              <div>
+                <label class="text-xs font-bold text-slate-300 mb-1 block">Bus Number (Optional if general stop issue)</label>
+                <input id="comp-bus" type="text" class="field-input !pl-3 font-bold" placeholder="e.g. 400K, 900K, 28A" />
+              </div>
+
+              <div>
+                <label class="text-xs font-bold text-slate-300 mb-1 block">Describe the Transit Issue</label>
+                <textarea id="comp-text" rows="3" class="field-input !pl-3 resize-none" placeholder="Describe the issue (e.g. Bus skipped stop due to rush, extreme delay, rash driving)..."></textarea>
+              </div>
+
+              <button id="btn-submit-complaint" class="btn-primary w-full">
+                Submit Complaint & Generate Ticket ID
+              </button>
+            </div>
+
+            <!-- Output Ticket Badge -->
+            <div id="ticket-output"></div>
+
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- ========================================================================
+       24x7 TRANSIT SOS MODAL
+       ======================================================================== -->
+  <div id="modal-sos" class="fixed inset-0 z-[9999] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 hidden">
+    <div class="glass-panel max-w-md w-full p-6 space-y-4 border-cyan-500/40 shadow-2xl relative animate-slide-up">
+      <div class="flex items-center justify-between border-b border-white/10 pb-3">
+        <div class="flex items-center gap-2.5">
+          <span class="text-2xl">🚨</span>
+          <div>
+            <h3 class="text-base font-extrabold text-white">24x7 Vizag Transit Helplines</h3>
+            <p class="text-xs text-slate-400">Emergency & commuter support for Greater Visakhapatnam</p>
+          </div>
+        </div>
+        <button id="btn-close-sos" class="text-slate-400 hover:text-white text-lg font-bold p-1">✕</button>
+      </div>
+
+      <div class="space-y-2.5 text-xs">
+        <div class="flex items-center justify-between p-3 rounded-xl bg-slate-900/90 border border-white/10">
+          <div>
+            <div class="font-bold text-white">APSRTC 24x7 Enquiry (Toll-Free)</div>
+            <div class="text-[11px] text-slate-400">Bus timings, reservations & fares</div>
+          </div>
+          <a href="tel:08662570005" class="px-2.5 py-1 rounded-lg bg-cyan-400 text-slate-950 font-extrabold text-xs">0866-2570005</a>
+        </div>
+
+        <div class="flex items-center justify-between p-3 rounded-xl bg-slate-900/90 border border-white/10">
+          <div>
+            <div class="font-bold text-white">RTC Complex (Dwaraka Bus Station)</div>
+            <div class="text-[11px] text-slate-400">Vizag Main Central Bus Stand Control</div>
+          </div>
+          <a href="tel:08912746400" class="px-2.5 py-1 rounded-lg bg-slate-800 text-cyan-300 border border-cyan-500/30 font-extrabold text-xs">0891-2746400</a>
+        </div>
+
+        <div class="flex items-center justify-between p-3 rounded-xl bg-slate-900/90 border border-white/10">
+          <div>
+            <div class="font-bold text-white">Vizag City Police / Disha SOS</div>
+            <div class="text-[11px] text-slate-400">Emergency police assistance & passenger safety</div>
+          </div>
+          <a href="tel:112" class="px-2.5 py-1 rounded-lg bg-rose-500 text-white font-extrabold text-xs">Dial 112 / 100</a>
+        </div>
+
+        <div class="flex items-center justify-between p-3 rounded-xl bg-slate-900/90 border border-white/10">
+          <div>
+            <div class="font-bold text-white">Women Passenger Safety Helpline</div>
+            <div class="text-[11px] text-slate-400">24/7 dedicated women distress support</div>
+          </div>
+          <a href="tel:181" class="px-2.5 py-1 rounded-lg bg-rose-500 text-white font-extrabold text-xs">Dial 181</a>
+        </div>
+
+        <div class="flex items-center justify-between p-3 rounded-xl bg-slate-900/90 border border-white/10">
+          <div>
+            <div class="font-bold text-white">GVMC Citizen Helpline</div>
+            <div class="text-[11px] text-slate-400">Municipal grievance & transit amenities</div>
+          </div>
+          <a href="tel:180042500001" class="px-2.5 py-1 rounded-lg bg-slate-800 text-white border border-white/15 font-extrabold text-xs">1800-425-00001</a>
+        </div>
+      </div>
+
+      <div class="pt-1 text-center text-[10px] text-slate-500">
+        All helplines are available 24 hours a day, 7 days a week across GVMC.
+      </div>
+    </div>
+  </div>
+
+  <!-- TOAST NOTIFICATION -->
+  <div id="toast" role="status"></div>
+
+  <!-- APPLICATION JAVASCRIPT -->
+  <script>
+    function resolveApiBase() {
+      const urlParams = new URLSearchParams(window.location.search);
+      const apiParam = urlParams.get('api');
+      if (apiParam) {
+        const clean = apiParam.replace(/\/+$/, '');
+        localStorage.setItem('VIZAG_API_BASE', clean);
+        return clean;
+      }
+      const saved = localStorage.getItem('VIZAG_API_BASE');
+      if (saved) return saved.replace(/\/+$/, '');
+      if (window.API_BASE) return window.API_BASE.replace(/\/+$/, '');
+      if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+        return window.location.port === '8000' ? '' : 'http://127.0.0.1:8000';
+      }
+      return '';
+    }
+    const API_BASE = resolveApiBase();
+    const $ = (id) => document.getElementById(id);
+
+    // Map & Layers
+    let map;
+    let allBusesLayer = L.layerGroup();
+    let highlightLayer = L.layerGroup();
+    let routePolylineLayer = L.layerGroup();
+    let userMarker = null;
+    let nearestStopMarker = null;
+    let userCoords = null;
+
+    // Cache & State
+    let allBusesCache = [];
+    let allStopsCache = [];
+    let allRoutesCache = [];
+    let selectedBusNumber = null;
+    let currentCorridorFilter = 'ALL';
+    let currentInspectedRoute = null;
+    let liveSimulationActive = true;
+    let hasSearched = false;
+
+    // ========================================================================
+    // COMPREHENSIVE TELUGU TRANSLATION SYSTEM
+    // ========================================================================
+    const TELUGU_MAP = {
+      'ACA-VDCA Cricket Stadium': 'ACA-VDCA క్రికెట్ స్టేడియం',
+      'Anakapalle RTC Complex': 'అనకాపల్లి RTC కాంప్లెక్స్',
+      'Anakapalle': 'అనకాపల్లి (Anakapalle)',
+      'Anandapuram Junction': 'ఆనందపురం జంక్షన్',
+      'Anandapuram': 'ఆనందపురం',
+      'Andhra University': 'ఆంధ్రా యూనివర్సిటీ',
+      'Arilova / Health City': 'అరిలోవ / హెల్త్ సిటీ',
+      'Arilova': 'అరిలోవ',
+      'Atchutapuram': 'అచ్యుతాపురం (Atchutapuram)',
+      'Autonagar Gate': 'ఆటోనగర్ గేట్',
+      'Autonagar': 'ఆటోనగర్',
+      'BHPV Junction': 'బి.హెచ్.పి.వి జంక్షన్',
+      'BHPV': 'బి.హెచ్.పి.వి',
+      'Bheemunipatnam Bus Stand': 'భీమునిపట్నం బస్ స్టాండ్ (భీమిలి)',
+      'Bheemunipatnam (Bheemili)': 'భీమునిపట్నం (భీమిలి)',
+      'Bheemunipatnam': 'భీమునిపట్నం (భీమిలి)',
+      'Bheemili': 'భీమిలి',
+      'Car Shed Junction': 'కార్ షెడ్ జంక్షన్',
+      'Car Shed': 'కార్ షెడ్',
+      'Chintalagraharam': 'చింతలగ్రహారం',
+      'Collector Office': 'కలెక్టర్ కార్యాలయం',
+      'Coromandel Gate': 'కోరమాండల్ గేట్',
+      'Desapatrunipalem': 'దేశపత్రునిపాలెం',
+      'Duvvada Railway Station': 'దువ్వాడ రైల్వే స్టేషన్',
+      'Duvvada': 'దువ్వాడ',
+      'GITAM University': 'గీతం యూనివర్సిటీ (GITAM)',
+      'GITAM': 'గీతం',
+      'Gajuwaka Junction': 'గాజువాక జంక్షన్ (Gajuwaka)',
+      'Gajuwaka': 'గాజువాక (Gajuwaka)',
+      'Gopalapatnam': 'గోపాలపట్నం',
+      'Gurudwara Junction': 'గురుద్వారా జంక్షన్',
+      'Gurudwara': 'గురుద్వారా',
+      'Hanumanthawaka Junction': 'హనుమంతవాక జంక్షన్',
+      'Hanumanthawaka': 'హనుమంతవాక',
+      'INS Kalinga': 'ఐ.ఎన్.ఎస్ కళింగ',
+      'IT SEZ (Rushikonda Hills)': 'ఐటీ సెజ్ (రుషికొండ హిల్స్)',
+      'Jagadamba Junction': 'జగదాంబ జంక్షన్ (Jagadamba)',
+      'Jagadamba': 'జగదాంబ (Jagadamba)',
+      'Kancharapalem': 'కంచరపాలెం',
+      'Kommadi Junction': 'కొమ్మాది జంక్షన్',
+      'Kommadi': 'కొమ్మాది',
+      'Kothavalasa': 'కొత్తవలస (Kothavalasa)',
+      'Kurmannapalem Junction': 'కూర్మన్నపాలెం జంక్షన్',
+      'Kurmannapalem': 'కూర్మన్నపాలెం (Kurmannapalem)',
+      'Lankelapalem Junction': 'లంకెలపాలెం జంక్షన్',
+      'Lankelapalem': 'లంకెలపాలెం',
+      'MVP Colony Circle': 'ఎం.వి.పి కాలనీ సర్కిల్',
+      'MVP Colony': 'ఎం.వి.పి కాలనీ',
+      'Maddilapalem': 'మద్దిలపాలెం (Maddilapalem)',
+      'Madhurawada': 'మధురవాడ (Madhurawada)',
+      'Malkapuram': 'మల్కాపురం',
+      'Mangamaripeta': 'మంగమారిపేట',
+      'Marikavalasa': 'మరికవలస',
+      'Marripalem': 'మర్రిపాలెం',
+      'NAD Junction': 'ఎన్.ఎ.డి జంక్షన్ (NAD Junction)',
+      'NAD': 'ఎన్.ఎ.డి జంక్షన్',
+      'NTPC Simhadri Gate': 'ఎన్టీపీసీ సింహాద్రి గేట్',
+      'Naval Dockyard': 'నావల్ డాక్‌యార్డ్',
+      'New Gajuwaka': 'న్యూ గాజువాక',
+      'Old Gajuwaka': 'ఓల్డ్ గాజువాక',
+      'Pandurangapuram': 'పాండురంగాపురం',
+      'Parawada Junction': 'పరవాడ జంక్షన్',
+      'Parawada': 'పరవాడ',
+      'Pendurthi Junction': 'పెందుర్తి జంక్షన్ (Pendurthi)',
+      'Pendurthi': 'పెందుర్తి (Pendurthi)',
+      'PM Palem': 'పి.ఎం. పాలెం (PM Palem)',
+      'Pothinamallayya Palem': 'పోతినమల్లయ్య పాలెం (PM Palem)',
+      'RK Beach': 'ఆర్.కె. బీచ్ (RK Beach)',
+      'RTC Complex (Dwaraka Nagar)': 'ద్వారకా బస్ స్టేషన్ (RTC కాంప్లెక్స్)',
+      'RTC Complex': 'ఆర్టీసీ కాంప్లెక్స్ (RTC Complex)',
+      'Dwaraka Bus Station (RTC Complex)': 'ద్వారకా బస్ స్టేషన్ (RTC కాంప్లెక్స్)',
+      'Rushikonda Beach Stop': 'రుషికొండ బీచ్ స్టాప్',
+      'Rushikonda Beach': 'రుషికొండ బీచ్',
+      'Rushikonda': 'రుషికొండ (Rushikonda)',
+      'Sabbavaram Junction': 'సబ్బవరం జంక్షన్',
+      'Sabbavaram': 'సబ్బవరం',
+      'Sagar Nagar': 'సాగర్ నగర్',
+      'Satyam Junction': 'సత్యం జంక్షన్',
+      'Scindia Junction': 'సింధియా జంక్షన్',
+      'Scindia': 'సింధియా',
+      'Seethammadhara': 'సీతమ్మధార',
+      'Sheela Nagar': 'శీలా నగర్',
+      'Simhachalam Foothills': 'సింహాచలం కొండ దిగువ',
+      'Simhachalam Temple': 'సింహాచలం దేవాలయం',
+      'Simhachalam': 'సింహాచలం (Simhachalam)',
+      'Siripuram Junction': 'సిరిపురం జంక్షన్',
+      'Siripuram': 'సిరిపురం (Siripuram)',
+      'Sriharipuram': 'శ్రీహరిపురం',
+      'Steel Plant Main Gate': 'స్టీల్ ప్లాంట్ మెయిన్ గేట్',
+      'Steel Plant Township Sector 6': 'స్టీల్ ప్లాంట్ టౌన్‌షిప్',
+      'Steel Plant': 'స్టీల్ ప్లాంట్ గేట్',
+      'Sujatha Nagar': 'సుజాతా నగర్',
+      'Tagarapuvalasa': 'తగరపువలస',
+      'Town Kotharoad': 'టౌన్ కొత్తరోడ్',
+      'Urvasi Junction': 'ఊర్వశి జంక్షన్',
+      'Ushodaya Junction': 'ఉషోదయ జంక్షన్',
+      'Venkojipalem': 'వెంకోజీపాలెం',
+      'Vepagunta Junction': 'వేపగుంట జంక్షన్',
+      'Vepagunta': 'వేపగుంట',
+      'Visakhapatnam Airport': 'విశాఖపట్నం ఎయిర్‌పోర్ట్ (Airport)',
+      'Airport': 'విశాఖ ఎయిర్‌పోర్ట్',
+      'Visakhapatnam Railway Station': 'రైల్వే స్టేషన్ (Railway Station)',
+      'Railway Station': 'రైల్వే స్టేషన్',
+      'Waltair Uplands': 'వాల్తేరు అప్‌ల్యాండ్స్',
+      'Waltair': 'వాల్తేరు',
+      'Zoo Park Stop': 'జూ పార్క్ స్టాప్',
+      'Zoo Park': 'జూ పార్క్',
+      'Kailasagiri': 'కైలాసగిరి (Kailasagiri)'
+    };
+
+    let isTelugu = false;
+
+    function getDisplayName(name) {
+      if (!name) return '';
+      if (!isTelugu) return name;
+      if (TELUGU_MAP[name]) return TELUGU_MAP[name];
+      for (const [k, v] of Object.entries(TELUGU_MAP)) {
+        if (name.toLowerCase() === k.toLowerCase()) return v;
+      }
+      return name;
+    }
+
+    const escapeHTML = (str) =>
+      String(str ?? '').replace(/[&<>"']/g, (ch) => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+      }[ch]));
+
+    // Toast Notification
+    let toastTimer;
+    function showToast(message, isError = false) {
+      const t = $('toast');
+      t.textContent = message;
+      t.style.borderColor = isError ? 'rgba(239, 68, 68, 0.6)' : 'rgba(56, 189, 248, 0.6)';
+      t.style.color = isError ? '#FCA5A5' : '#38BDF8';
+      t.classList.add('active');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => t.classList.remove('active'), 3200);
+    }
+
+    // API Wrapper
+    async function apiCall(endpoint, options = null) {
+      const config = options ? {
+        ...options,
+        headers: { 'Content-Type': 'application/json', ...(options.headers || {}) }
+      } : undefined;
+      const res = await fetch(`${API_BASE}${endpoint}`, config);
+      if (!res.ok) {
+        const errText = await res.text().catch(() => '');
+        throw new Error(errText || `HTTP ${res.status}`);
+      }
+      return res.json();
+    }
+
+    // Crowd Metadata Helper
+    function getCrowdMeta(pct) {
+      const p = Number(pct || 0);
+      if (p >= 75) {
+        return {
+          color: '#F43F5E',
+          label: isTelugu ? 'అధిక రద్దీ' : 'Overcrowded',
+          textColor: '#FFFFFF'
+        };
+      }
+      if (p >= 45) {
+        return {
+          color: '#F59E0B',
+          label: isTelugu ? 'మధ్యస్థ రద్దీ' : 'Moderate',
+          textColor: '#FFFFFF'
+        };
+      }
+      return {
+        color: '#10B981',
+        label: isTelugu ? 'తక్కువ రద్దీ' : 'Comfortable',
+        textColor: '#FFFFFF'
+      };
+    }
+
+    // ========================================================================
+    // 1. SUB-TAB SWITCHER
+    // ========================================================================
+    function switchCommuterSubTab(tab) {
+      ['planner', 'explorer', 'directory', 'grievance'].forEach((t) => {
+        const btn = $(`tab-btn-${t}`);
+        const panel = $(`panel-${t}`);
+        if (btn) btn.classList.toggle('active', t === tab);
+        if (panel) panel.classList.toggle('hidden', t !== tab);
+      });
+      setTimeout(() => map && map.invalidateSize(), 60);
+    }
+
+    // ========================================================================
+    // 2. LEAFLET MAP INITIALIZATION & BUS RENDERING
+    // ========================================================================
+    function initMap() {
+      map = L.map('map').setView([17.7285, 83.2900], 12);
+      
+      // High-contrast clean dark transit tiles
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap contributors',
+        maxZoom: 19
+      }).addTo(map);
+
+      allBusesLayer.addTo(map);
+      routePolylineLayer.addTo(map);
+      highlightLayer.addTo(map);
+    }
+
+    function createBusMarkerIcon(bus, isHighlighted = false) {
+      const meta = getCrowdMeta(bus.crowd_percentage);
+      const glow = isHighlighted ? `box-shadow: 0 0 20px ${meta.color}; border-color: ${meta.color}; transform: scale(1.15);` : `border-color: ${meta.color};`;
+      return L.divIcon({
+        className: '',
+        html: `
+          <div class="bus-marker-modern" style="${glow} border-width: 2px;">
+            <div class="flex items-center gap-1">
+              <span>🚌</span>
+              <span class="font-black text-white">${escapeHTML(bus.bus_number)}</span>
+            </div>
+            <div style="color: ${meta.color}; font-size: 9px; font-weight: 700;">
+              ${bus.crowd_percentage}% • ${bus.eta_minutes}m
+            </div>
+          </div>
+        `,
+        iconSize: [68, 38],
+        iconAnchor: [34, 19]
+      });
+    }
+
+    function plotBusesOnMap(busList) {
+      allBusesLayer.clearLayers();
+      busList.forEach((b) => {
+        if (b.lat != null && b.lng != null) {
+          const marker = L.marker([b.lat, b.lng], { icon: createBusMarkerIcon(b) });
+          const srcDisp = escapeHTML(getDisplayName(b.source));
+          const dstDisp = escapeHTML(getDisplayName(b.destination));
+          const curLocDisp = escapeHTML(getDisplayName(b.current_location));
+          
+          marker.bindTooltip(
+            `<div class="p-1 space-y-0.5">` +
+            `<div class="font-extrabold text-xs text-cyan-400">Bus ${escapeHTML(b.bus_number)}</div>` +
+            `<div class="text-[11px] text-white">${srcDisp} ➔ ${dstDisp}</div>` +
+            `<div class="text-[10px] text-slate-300">Near: <b>${curLocDisp}</b> • ETA: <b>${b.eta_minutes} mins</b></div>` +
+            `<div class="text-[10px] text-cyan-300 pt-0.5">Click to track this line on map</div>` +
+            `</div>`,
+            { direction: 'top' }
+          );
+          marker.on('click', () => selectBusNumberOnMap(b.bus_number));
+          marker.addTo(allBusesLayer);
+        }
+      });
+    }
+
+    function filterByCorridor(corridor, btnEl) {
+      currentCorridorFilter = corridor;
+      document.querySelectorAll('.corridor-pill').forEach((p) => p.classList.remove('active'));
+      if (btnEl) btnEl.classList.add('active');
+
+      if (corridor === 'ALL') {
+        plotBusesOnMap(allBusesCache);
+        $('map-status-label').textContent = isTelugu
+          ? `విశాఖలోని మొత్తం ${allBusesCache.length} యాక్టివ్ బస్సులను చూపిస్తున్నాము`
+          : `Showing All ${allBusesCache.length} Active Buses in Vizag`;
+        return;
+      }
+
+      const filtered = allBusesCache.filter((b) => {
+        const text = `${b.source} ${b.destination} ${b.current_location}`.toLowerCase();
+        if (corridor === 'South') return text.includes('gajuwaka') || text.includes('kurmanna') || text.includes('steel') || text.includes('scindia') || text.includes('anakapalle') || text.includes('duvvada');
+        if (corridor === 'Beach') return text.includes('beach') || text.includes('rushikonda') || text.includes('bheemili') || text.includes('gitam') || text.includes('sagar');
+        if (corridor === 'West') return text.includes('simhachalam') || text.includes('pendurthi') || text.includes('gopalapatnam') || text.includes('vepagunta') || text.includes('kothavalasa');
+        if (corridor === 'North') return text.includes('madhurawada') || text.includes('tagarapuvalasa') || text.includes('pm palem') || text.includes('kommadi') || text.includes('anandapuram');
+        if (corridor === 'Central') return text.includes('rtc complex') || text.includes('siripuram') || text.includes('maddilapalem') || text.includes('jagadamba') || text.includes('railway station');
+        return true;
+      });
+
+      plotBusesOnMap(filtered);
+      $('map-status-label').textContent = isTelugu
+        ? `${corridor} కారిడార్ — ${filtered.length} బస్సులు నడుస్తున్నాయి`
+        : `${corridor} Corridor — ${filtered.length} Buses Running`;
+    }
+
+    async function fetchAndRenderAllBuses() {
+      try {
+        const data = await apiCall('/api/buses');
+        allBusesCache = data.buses || [];
+        $('live-fleet-badge').textContent = `${allBusesCache.length} ${isTelugu ? 'యాక్టివ్ బస్సులు' : 'Active Buses'}`;
+
+        if (!selectedBusNumber && !hasSearched) {
+          plotBusesOnMap(allBusesCache);
+        }
+        $('status-dot').className = 'w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-sm shadow-emerald-400';
+        $('status-text').textContent = isTelugu ? `లైవ్ నెట్‌వర్క్ (${allBusesCache.length} బస్సులు)` : `Live Network (${allBusesCache.length} Buses)`;
+      } catch (err) {
+        $('status-dot').className = 'w-2.5 h-2.5 rounded-full bg-rose-500 shadow-sm shadow-rose-500';
+        $('status-text').textContent = isTelugu ? 'నెట్‌వర్క్ ఆఫ్‌లైన్' : 'Backend Offline';
+      }
+    }
+
+    // ========================================================================
+    // 3. TRACK A SPECIFIC BUS NUMBER
+    // ========================================================================
+    async function selectBusNumberOnMap(busNumber) {
+      try {
+        const data = await apiCall(`/api/buses/number/${encodeURIComponent(busNumber)}`);
+        const matchingBuses = data.buses || [];
+        selectedBusNumber = busNumber;
+
+        allBusesLayer.clearLayers();
+        highlightLayer.clearLayers();
+
+        const coords = [];
+        matchingBuses.forEach((b) => {
+          if (b.lat != null && b.lng != null) {
+            coords.push([b.lat, b.lng]);
+            const srcDisp = escapeHTML(getDisplayName(b.source));
+            const dstDisp = escapeHTML(getDisplayName(b.destination));
+            const curLocDisp = escapeHTML(getDisplayName(b.current_location));
+            
+            L.marker([b.lat, b.lng], { icon: createBusMarkerIcon(b, true), zIndexOffset: 1000 })
+              .bindPopup(
+                `<div class="p-2 space-y-1 text-xs">` +
+                `<div class="font-black text-sm text-cyan-400">Bus ${escapeHTML(b.bus_number)}</div>` +
+                `<div class="text-white font-semibold">Route: ${srcDisp} ➔ ${dstDisp}</div>` +
+                `<div class="text-slate-300">Near: <b>${curLocDisp}</b> • ETA: <b>${b.eta_minutes} mins</b></div>` +
+                `<div class="text-slate-300">Occupancy: <b>${b.crowd_percentage}% (${b.crowd_status})</b></div>` +
+                `<div class="pt-2"><button onclick="inspectBusRoute('${escapeHTML(b.bus_number)}')" class="px-3 py-1.5 rounded-lg bg-cyan-500 text-slate-950 font-bold text-xs w-full hover:bg-cyan-400 transition-colors">Inspect All Stops on Route ➔</button></div>` +
+                `</div>`
+              )
+              .addTo(highlightLayer)
+              .openPopup();
+          }
+        });
+
+        if (coords.length) {
+          map.fitBounds(coords, { padding: [70, 70], maxZoom: 15 });
+        }
+
+        $('map-status-label').textContent = isTelugu
+          ? `లైన్ ${busNumber} ట్రాకింగ్ (${matchingBuses.length} నడుస్తున్న బస్సులు)`
+          : `Tracking Line ${busNumber} (${matchingBuses.length} Active Fleet)`;
+        $('btn-reset-map').classList.remove('hidden');
+
+        // Render timeline
+        const sorted = [...matchingBuses].sort((a, b) => a.eta_minutes - b.eta_minutes);
+        $('line-timeline-card').classList.remove('hidden');
+        $('timeline-title').textContent = isTelugu
+          ? `బస్సు ${busNumber} లైవ్ ఫ్లీట్ — ${sorted.length} ప్రస్తుతం నడుస్తున్నాయి`
+          : `Bus ${busNumber} Live Fleet — ${sorted.length} Running Now`;
+        $('timeline-subtitle').textContent = sorted.length
+          ? `Route: ${getDisplayName(sorted[0].source)} ➔ ${getDisplayName(sorted[0].destination)}`
+          : 'No running buses on this line right now';
+
+        $('timeline-list').innerHTML = sorted.map((b, idx) => {
+          const meta = getCrowdMeta(b.crowd_percentage);
+          return `
+            <div class="p-3 rounded-xl flex items-center justify-between gap-3 bg-slate-900/90 border border-white/10">
+              <div>
+                <div class="flex items-center gap-2">
+                  <span class="text-xs font-black px-2 py-0.5 rounded bg-cyan-500 text-slate-950">
+                    #${idx + 1} Bus ${escapeHTML(b.bus_number)}
+                  </span>
+                  <span class="text-xs font-extrabold text-cyan-300">In ${b.eta_minutes} mins</span>
+                </div>
+                <div class="text-xs mt-1 text-slate-300">
+                  Passing: <b class="text-white">${escapeHTML(getDisplayName(b.current_location))}</b>
+                </div>
+              </div>
+              <div class="text-right">
+                <span class="text-xs font-bold px-2 py-0.5 rounded-full inline-block" style="background: ${meta.color}; color: ${meta.textColor};">
+                  ${b.crowd_percentage}%
+                </span>
+              </div>
+            </div>
+          `;
+        }).join('');
+      } catch (err) {
+        showToast(`Failed to track Bus ${busNumber}`, true);
+      }
+    }
+
+    $('btn-view-line-stops').onclick = () => {
+      if (selectedBusNumber) inspectBusRoute(selectedBusNumber);
+    };
+
+    function resetMapToAllBuses() {
+      selectedBusNumber = null;
+      highlightLayer.clearLayers();
+      routePolylineLayer.clearLayers();
+      $('line-timeline-card').classList.add('hidden');
+      $('btn-reset-map').classList.add('hidden');
+      $('map-status-label').textContent = isTelugu
+        ? `విశాఖలోని అన్ని యాక్టివ్ బస్సులను చూపిస్తున్నాము`
+        : `Showing All Active Buses in Visakhapatnam`;
+      plotBusesOnMap(allBusesCache);
+      map.setView([17.7285, 83.2900], 12);
+    }
+
+    $('btn-reset-map').onclick = resetMapToAllBuses;
+    $('btn-close-timeline').onclick = resetMapToAllBuses;
+
+    // ========================================================================
+    // 4. AUTOCOMPLETE & ROUTE SEARCH WITH SWAP TOGGLE
+    // ========================================================================
+    function getCombinedRouteSuggestions() {
+      const names = new Set();
+      allStopsCache.forEach((s) => names.add(s.stop_name));
+      allBusesCache.forEach((b) => {
+        if (b.source) names.add(b.source);
+        if (b.destination) names.add(b.destination);
+      });
+      return Array.from(names);
+    }
+
+    function bindAutocomplete(inputEl, dropdownEl, clearBtnEl) {
+      const updateClearBtn = () => {
+        if (clearBtnEl) {
+          clearBtnEl.classList.toggle('visible', inputEl.value.trim().length > 0);
+        }
+      };
+
+      const renderList = () => {
+        updateClearBtn();
+        const query = inputEl.value.trim().toLowerCase();
+        const suggestions = getCombinedRouteSuggestions()
+          .filter((name) => {
+            const disp = getDisplayName(name).toLowerCase();
+            return name.toLowerCase().includes(query) || disp.includes(query);
+          })
+          .slice(0, 8);
+
+        if (!suggestions.length) {
+          dropdownEl.classList.add('hidden');
+          return;
+        }
+
+        dropdownEl.innerHTML = suggestions
+          .map((name) => `
+            <div class="autocomplete-item">
+              <span class="text-white">🚏 ${escapeHTML(getDisplayName(name))}</span>
+              <span class="text-[10px] text-cyan-400 font-bold">${isTelugu ? 'ఎంచుకోండి' : 'Select'}</span>
+            </div>
+          `).join('');
+        dropdownEl.classList.remove('hidden');
+
+        dropdownEl.querySelectorAll('.autocomplete-item').forEach((item, idx) => {
+          item.onmousedown = () => {
+            inputEl.value = suggestions[idx];
+            updateClearBtn();
+            dropdownEl.classList.add('hidden');
+          };
+        });
+      };
+
+      inputEl.addEventListener('input', renderList);
+      inputEl.addEventListener('focus', renderList);
+      inputEl.addEventListener('blur', () => setTimeout(() => dropdownEl.classList.add('hidden'), 180));
+
+      if (clearBtnEl) {
+        clearBtnEl.addEventListener('click', (e) => {
+          e.preventDefault();
+          inputEl.value = '';
+          updateClearBtn();
+          inputEl.focus();
+          renderList();
+        });
+      }
+    }
+
+    // SWAP / FLIP STOPS BUTTON LOGIC (Addresses the core user issue!)
+    function swapOriginDestination() {
+      const srcInput = $('input-src');
+      const dstInput = $('input-dst');
+      const temp = srcInput.value;
+      srcInput.value = dstInput.value;
+      dstInput.value = temp;
+
+      // Update clear buttons visibility
+      $('btn-clear-src').classList.toggle('visible', srcInput.value.trim().length > 0);
+      $('btn-clear-dst').classList.toggle('visible', dstInput.value.trim().length > 0);
+
+      showToast(isTelugu ? 'ప్రారంభం & గమ్యం పరస్పరం మార్చబడ్డాయి ⇄' : 'Swapped Origin and Destination ⇄');
+
+      // If both values exist, execute reversed search immediately!
+      if (srcInput.value.trim() && dstInput.value.trim()) {
+        executeSearch();
+      }
+    }
+
+    $('btn-swap-stops').onclick = swapOriginDestination;
+    $('btn-swap-inline').onclick = swapOriginDestination;
+
+    // Quick select destination
+    function quickSelectDestination(destName) {
+      const dstInput = $('input-dst');
+      dstInput.value = destName;
+      $('btn-clear-dst').classList.add('visible');
+
+      // If origin is not filled yet, try default to NAD or Siripuram
+      const srcInput = $('input-src');
+      if (!srcInput.value.trim()) {
+        srcInput.value = (destName === 'NAD Junction') ? 'Siripuram Junction' : 'NAD Junction';
+        $('btn-clear-src').classList.add('visible');
+      }
+
+      showToast(`Destination set to ${getDisplayName(destName)}! Finding buses...`);
+      executeSearch();
+    }
+
+    // Clear active route to change
+    $('btn-clear-route').onclick = () => {
+      $('input-dst').value = '';
+      $('btn-clear-dst').classList.remove('visible');
+      $('input-dst').focus();
+      $('active-route-bar').classList.add('hidden');
+      showToast('Destination cleared. Pick a new stop!');
+    };
+
+    // SEARCH BUSES FUNCTION
+    async function executeSearch() {
+      const src = $('input-src').value.trim();
+      const dst = $('input-dst').value.trim();
+      if (!src || !dst) {
+        return showToast(isTelugu ? 'దయచేసి ప్రారంభం మరియు గమ్యస్థానాన్ని నమోదు చేయండి' : 'Please enter both Origin and Destination stops', true);
+      }
+
+      try {
+        const res = await apiCall(`/api/buses?source=${encodeURIComponent(src)}&destination=${encodeURIComponent(dst)}`);
+        const foundBuses = res.buses || [];
+        const foundAlts = res.alternatives || [];
+
+        hasSearched = true;
+        selectedBusNumber = null;
+        highlightLayer.clearLayers();
+        routePolylineLayer.clearLayers();
+        $('line-timeline-card').classList.add('hidden');
+
+        // Update Active Route Bar
+        $('active-route-bar').classList.remove('hidden');
+        $('active-route-src').textContent = getDisplayName(src);
+        $('active-route-dst').textContent = getDisplayName(dst);
+
+        // Show ONLY matching buses on the map!
+        plotBusesOnMap(foundBuses);
+        renderBusCards(foundBuses, foundAlts);
+
+        // Draw connecting polyline between the stops if coordinates are available
+        const srcStop = allStopsCache.find(s => s.stop_name.toLowerCase() === src.toLowerCase());
+        const dstStop = allStopsCache.find(s => s.stop_name.toLowerCase() === dst.toLowerCase());
+        
+        const mapPins = [];
+        if (srcStop && srcStop.lat != null) {
+          mapPins.push([srcStop.lat, srcStop.lng]);
+          L.marker([srcStop.lat, srcStop.lng], {
+            icon: L.divIcon({
+              className: '',
+              html: `<div class="stop-marker-pin" style="background: #10B981; border-color: #A7F3D0; color: #070B14;">A</div>`,
+              iconSize: [24, 24]
+            })
+          }).bindPopup(`<b>Origin: ${escapeHTML(getDisplayName(srcStop.stop_name))}</b>`).addTo(highlightLayer);
+        }
+
+        if (dstStop && dstStop.lat != null) {
+          mapPins.push([dstStop.lat, dstStop.lng]);
+          L.marker([dstStop.lat, dstStop.lng], {
+            icon: L.divIcon({
+              className: '',
+              html: `<div class="stop-marker-pin" style="background: #F43F5E; border-color: #FECDD3; color: #FFFFFF;">B</div>`,
+              iconSize: [24, 24]
+            })
+          }).bindPopup(`<b>Destination: ${escapeHTML(getDisplayName(dstStop.stop_name))}</b>`).addTo(highlightLayer);
+        }
+
+        // Add bus coords
+        foundBuses.forEach(b => {
+          if (b.lat != null && b.lng != null) mapPins.push([b.lat, b.lng]);
+        });
+
+        if (srcStop && dstStop) {
+          L.polyline([[srcStop.lat, srcStop.lng], [dstStop.lat, dstStop.lng]], {
+            color: '#06B6D4',
+            weight: 4,
+            dashArray: '6, 8',
+            opacity: 0.8
+          }).addTo(routePolylineLayer);
+        }
+
+        if (mapPins.length) {
+          map.fitBounds(mapPins, { padding: [60, 60], maxZoom: 15 });
+        }
+
+        // Route Summary Advice
+        if (foundBuses.length > 0) {
+          const fastest = foundBuses.slice().sort((a, b) => a.eta_minutes - b.eta_minutes)[0];
+          const lowestCrowd = foundBuses.slice().sort((a, b) => a.crowd_percentage - b.crowd_percentage)[0];
+          const bestComfortMeta = getCrowdMeta(lowestCrowd.crowd_percentage);
+
+          $('route-summary-box').classList.remove('hidden');
+          $('sum-fare-est').textContent = `APSRTC Fare: ₹15 – ₹30`;
+
+          const fastLoc = getDisplayName(fastest.current_location);
+          let advice = isTelugu
+            ? `• ⏱️ తదుపరి బస్సు: బస్సు ${escapeHTML(fastest.bus_number)} — ${fastest.eta_minutes} నిమిషాల్లో (${escapeHTML(fastLoc)} వద్ద).\n` +
+              `• 💺 అనుకూల ప్రయాణం: బస్సు ${escapeHTML(lowestCrowd.bus_number)} (${lowestCrowd.crowd_percentage}% రద్దీ - ${bestComfortMeta.label}).\n`
+            : `• ⏱️ Fastest Arrival: Bus ${escapeHTML(fastest.bus_number)} arriving in ${fastest.eta_minutes} mins (Passing ${escapeHTML(fastLoc)}).\n` +
+              `• 💺 Best Comfort: Bus ${escapeHTML(lowestCrowd.bus_number)} (${lowestCrowd.crowd_percentage}% full - ${bestComfortMeta.label}).\n`;
+
+          if (foundAlts.length) {
+            advice += isTelugu ? `• 🔄 కనెక్టింగ్ ఆప్షన్: ${escapeHTML(foundAlts[0].route_details)}` : `• 🔄 Connecting Option: ${escapeHTML(foundAlts[0].route_details)}`;
+          } else {
+            advice += isTelugu ? `• 🚌 ఫ్రీక్వెన్సీ: ఈ మార్గంలో తరచూ ఎక్స్‌ప్రెస్ బస్సులు అందుబాటులో ఉంటాయి.` : `• 🚌 Frequency: Direct services run along this Vizag corridor every 10–15 mins.`;
+          }
+          $('sum-advice-text').textContent = advice;
+        } else if (foundAlts.length > 0) {
+          $('route-summary-box').classList.remove('hidden');
+          $('sum-fare-est').textContent = `Fare: ₹20 – ₹35`;
+          $('sum-advice-text').textContent = isTelugu
+            ? `• 🔄 ప్రత్యక్ష బస్సు లేదు, కానీ క్రింద సూచించిన కనెక్టింగ్ బస్సులు అందుబాటులో ఉన్నాయి.`
+            : `• 🔄 No direct bus currently live, but connecting options are available below via ${escapeHTML(foundAlts[0].source)} or NAD / Maddilapalem.`;
+        } else {
+          $('route-summary-box').classList.add('hidden');
+        }
+
+        $('map-status-label').textContent = isTelugu
+          ? `${foundBuses.length} సంబంధిత బస్సులను చూపిస్తున్నాము (${src} ➔ ${dst})`
+          : `Showing ${foundBuses.length} Matching Buses (${src} ➔ ${dst})`;
+        $('btn-reset-map').classList.remove('hidden');
+
+        showToast(isTelugu ? `${foundBuses.length} బస్సులు లభించాయి` : `Found ${foundBuses.length} bus(es) for this route`);
+      } catch (err) {
+        showToast('Search failed: ' + err.message, true);
+      }
+    }
+
+    $('btn-search').onclick = executeSearch;
+
+    // Reset button
+    $('btn-show-all').onclick = () => {
+      $('input-src').value = '';
+      $('input-dst').value = '';
+      $('btn-clear-src').classList.remove('visible');
+      $('btn-clear-dst').classList.remove('visible');
+      $('route-summary-box').classList.add('hidden');
+      $('active-route-bar').classList.add('hidden');
+      hasSearched = false;
+      resetMapToAllBuses();
+
+      // Show search prompt placeholder
+      $('search-results').innerHTML = `
+        <div class="p-8 rounded-2xl text-center space-y-2.5 bg-slate-900/60 border border-dashed border-white/15 animate-slide-up">
+          <div class="text-3xl">🔍</div>
+          <div class="text-xs font-bold text-white">${isTelugu ? 'మీ ప్రయాణ మార్గాన్ని శోధించండి' : 'Search Your Journey'}</div>
+          <p class="text-[11px] text-slate-400 max-w-xs mx-auto">
+            ${isTelugu ? 'ప్రారంభం మరియు గమ్యస్థానాన్ని నమోదు చేసి బస్సులను వెతకండి' : 'Enter your origin and destination stops above, then click "Find Connecting Buses" to see live buses on the map.'}
+          </p>
+        </div>
+      `;
+    };
+
+    function renderBusCards(busesList, alternativesList) {
+      const container = $('search-results');
+      let html = '';
+
+      if (!busesList.length) {
+        html += `
+          <div class="p-6 rounded-2xl text-xs text-center space-y-2 bg-slate-900/60 border border-dashed border-white/15 animate-slide-up">
+            <div class="text-2xl">🚌</div>
+            <div class="font-bold text-white">${isTelugu ? 'ఈ మార్గంలో ప్రత్యక్ష బస్సులు కనిపించలేదు' : 'No Direct Running Buses Found'}</div>
+            <div class="text-slate-400 text-[11px]">${isTelugu ? 'దయచేసి ప్రత్యామ్నాయ కనెక్టింగ్ మార్గాలను చూడండి లేదా ఇతర స్టాప్‌లను ఎంచుకోండి.' : 'Check the connecting alternatives below or try searching via NAD Junction or Siripuram.'}</div>
+          </div>
+        `;
+      } else {
+        html += busesList.map((b) => {
+          const meta = getCrowdMeta(b.crowd_percentage);
+          const srcDisp = escapeHTML(getDisplayName(b.source));
+          const dstDisp = escapeHTML(getDisplayName(b.destination));
+          const curLocDisp = escapeHTML(getDisplayName(b.current_location));
+          
+          return `
+            <div class="p-3.5 rounded-xl space-y-2.5 bg-slate-900/90 border border-white/10 hover:border-cyan-500/40 transition-all hover:scale-[1.01] animate-slide-up">
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <span class="px-2 py-0.5 rounded-lg font-black text-xs bg-cyan-500 text-slate-950">
+                    ${escapeHTML(b.bus_number)}
+                  </span>
+                  <span class="text-xs font-bold text-white">${srcDisp} ➔ ${dstDisp}</span>
+                </div>
+                <span class="text-xs font-black text-cyan-300">${b.eta_minutes} mins</span>
+              </div>
+
+              <!-- Crowd Bar -->
+              <div class="h-1.5 rounded-full bg-slate-800 overflow-hidden">
+                <div class="h-full rounded-full transition-all duration-500" style="width: ${b.crowd_percentage}%; background: ${meta.color};"></div>
+              </div>
+
+              <div class="flex items-center justify-between text-[11px] text-slate-300">
+                <span>📍 Passing: <b class="text-white">${curLocDisp}</b></span>
+                <span class="font-bold" style="color: ${meta.color};">${b.crowd_percentage}% (${meta.label})</span>
+              </div>
+
+              <div class="pt-2 border-t border-white/10 flex items-center justify-between text-[11px]">
+                <button onclick="selectBusNumberOnMap('${escapeHTML(b.bus_number)}')" class="text-cyan-400 hover:text-white font-semibold flex items-center gap-1">
+                  <span>📡</span> <span>Track Line on Map</span>
+                </button>
+                <button onclick="inspectBusRoute('${escapeHTML(b.bus_number)}')" class="text-indigo-300 hover:text-white font-bold flex items-center gap-1">
+                  <span>All Stops (${escapeHTML(b.bus_number)})</span> <span>➔</span>
+                </button>
+              </div>
+            </div>
+          `;
+        }).join('');
+      }
+
+      if (alternativesList && alternativesList.length) {
+        html += `<div class="pt-2 text-xs font-extrabold uppercase tracking-wider text-cyan-400">${isTelugu ? 'స్మార్ట్ ప్రత్యామ్నాయ కనెక్టింగ్ రూట్లు' : 'Connecting Transit Alternatives'}</div>`;
+        html += alternativesList.map((alt) => `
+          <div class="p-3 rounded-xl text-xs space-y-1 bg-indigo-950/40 border border-dashed border-indigo-500/40 animate-slide-up">
+            <div class="flex justify-between font-bold text-indigo-300">
+              <span>🔄 ${escapeHTML(alt.option_type || 'Connecting Route')}</span>
+              <span>~${alt.total_time_mins || 25} mins</span>
+            </div>
+            <div class="text-slate-200 text-[11px]">${escapeHTML(alt.route_details || '')}</div>
+          </div>
+        `).join('');
+      }
+
+      container.innerHTML = html;
+    }
+
+    // ========================================================================
+    // 5. BUS ROUTE & STOPS EXPLORER
+    // ========================================================================
+    async function loadAllRoutes() {
+      try {
+        const data = await apiCall('/api/routes');
+        allRoutesCache = data.routes || [];
+        const selectEl = $('select-bus-number');
+        selectEl.innerHTML = `<option value="">-- Choose a Bus Line (30 Routes) --</option>` +
+          allRoutesCache.map((r) => `
+            <option value="${escapeHTML(r.bus_number)}">
+              Bus ${escapeHTML(r.bus_number)} (${escapeHTML(getDisplayName(r.source))} ➔ ${escapeHTML(getDisplayName(r.destination))}) [${r.total_stops || 0} Stops]
+            </option>
+          `).join('');
+      } catch (err) {
+        console.error('Failed to load routes', err);
+      }
+    }
+
+    async function inspectBusRoute(busNumber, doSwitchTab = true) {
+      if (!busNumber) return showToast('Please select or enter a bus number', true);
+      if (doSwitchTab) switchCommuterSubTab('explorer');
+      $('select-bus-number').value = busNumber;
+
+      try {
+        const details = await apiCall(`/api/routes/${encodeURIComponent(busNumber)}`);
+        const route = details.route;
+        const stops = details.stops || [];
+        const activeBuses = details.active_buses || [];
+        currentInspectedRoute = details;
+
+        if (!route && !stops.length) {
+          showToast(`No route stops data found for Bus ${busNumber}`, true);
+          return;
+        }
+
+        $('explorer-placeholder').classList.add('hidden');
+        $('explorer-details').classList.remove('hidden');
+
+        const srcDisp = getDisplayName(route ? route.source : (stops[0]?.stop_name || 'Origin'));
+        const dstDisp = getDisplayName(route ? route.destination : (stops[stops.length - 1]?.stop_name || 'Destination'));
+
+        $('exp-bus-badge').textContent = `Bus ${busNumber}`;
+        $('exp-bus-type').textContent = route ? route.bus_type || 'Metro Express' : 'City Transit';
+        $('exp-bus-frequency').textContent = route ? `Every ${route.frequency_mins || 15} mins • ${route.first_bus_time}–${route.last_bus_time}` : 'Regular service';
+        $('exp-route-title').textContent = `${srcDisp} ➔ ${dstDisp}`;
+        $('exp-route-via').textContent = route ? route.via : `Covers ${stops.length} transit stops`;
+        $('exp-total-stops').textContent = `${stops.length} Stops (${stops[stops.length - 1]?.distance_km || 20} km)`;
+        $('exp-fare-range').textContent = route ? `₹${route.fare_min} – ₹${route.fare_max}` : '₹10 – ₹30';
+        $('exp-active-count').textContent = `${activeBuses.length} Running Now`;
+
+        // Render sequential stepper
+        const stepperEl = $('stops-stepper-container');
+        stepperEl.innerHTML = stops.map((s, idx) => {
+          const isOrigin = idx === 0;
+          const isDest = idx === stops.length - 1;
+          const nodeClass = isOrigin ? 'origin' : (isDest ? 'destination' : '');
+
+          const busesAtStop = activeBuses.filter((b) =>
+            b.current_location && b.current_location.toLowerCase().includes(s.stop_name.toLowerCase().split(' ')[0])
+          );
+
+          let liveBusBadge = '';
+          if (busesAtStop.length) {
+            const b = busesAtStop[0];
+            const meta = getCrowdMeta(b.crowd_percentage);
+            liveBusBadge = `
+              <div class="mt-1.5 p-1.5 rounded-lg flex items-center justify-between text-[11px] bg-cyan-950/60 border border-cyan-500/40">
+                <span class="font-bold text-cyan-300">🚌 Bus ${escapeHTML(b.bus_number)} here now (${b.eta_minutes}m away)</span>
+                <span class="font-bold px-1.5 py-0.5 rounded text-[10px]" style="background:${meta.color}; color:${meta.textColor};">${b.crowd_percentage}%</span>
+              </div>
+            `;
+          }
+
+          return `
+            <div class="stop-node ${nodeClass}">
+              <div class="stop-node-dot">${s.stop_sequence}</div>
+              <div class="flex items-start justify-between gap-2">
+                <div>
+                  <div class="text-xs font-bold text-white flex items-center gap-1.5">
+                    <span>${escapeHTML(getDisplayName(s.stop_name))}</span>
+                    ${isOrigin ? `<span class="text-[9px] px-1.5 py-0.2 rounded font-black bg-emerald-400 text-slate-950">ORIGIN</span>` : ''}
+                    ${isDest ? `<span class="text-[9px] px-1.5 py-0.2 rounded font-black bg-rose-500 text-white">TERMINUS</span>` : ''}
+                  </div>
+                  <div class="text-[11px] text-slate-400 mt-0.5">
+                    ${s.landmark ? escapeHTML(s.landmark) : (s.area ? escapeHTML(s.area) : 'Transit Stop')}
+                  </div>
+                </div>
+                <div class="text-right text-[11px] text-slate-400 whitespace-nowrap">
+                  <div class="font-bold text-cyan-300">${s.distance_km} km</div>
+                  <div class="text-[10px] text-slate-500">+${s.eta_from_start_mins} mins</div>
+                </div>
+              </div>
+              ${liveBusBadge}
+            </div>
+          `;
+        }).join('');
+
+        drawRouteOnMap(stops, activeBuses, busNumber);
+        if (doSwitchTab) showToast(`Loaded ${stops.length} stops for Bus ${busNumber}`);
+      } catch (err) {
+        showToast(`Failed to inspect Bus ${busNumber}: ${err.message}`, true);
+      }
+    }
+
+    function selectQuickRoute(busNumber) {
+      inspectBusRoute(busNumber);
+    }
+
+    $('btn-inspect-bus').onclick = () => {
+      const busNumber = $('select-bus-number').value;
+      if (!busNumber) return showToast('Please choose a bus number first', true);
+      inspectBusRoute(busNumber);
+    };
+
+    $('select-bus-number').onchange = (e) => {
+      if (e.target.value) inspectBusRoute(e.target.value);
+    };
+
+    function drawRouteOnMap(stops, activeBuses, busNumber) {
+      routePolylineLayer.clearLayers();
+      allBusesLayer.clearLayers();
+      highlightLayer.clearLayers();
+
+      const validStops = stops.filter((s) => s.lat != null && s.lng != null);
+      if (!validStops.length) return;
+
+      const latlngs = validStops.map((s) => [s.lat, s.lng]);
+
+      // Route Polyline
+      const polyline = L.polyline(latlngs, {
+        color: '#06B6D4',
+        weight: 5,
+        opacity: 0.95,
+        lineCap: 'round',
+        lineJoin: 'round'
+      }).addTo(routePolylineLayer);
+
+      // Stop Pins
+      validStops.forEach((s) => {
+        const stopPin = L.divIcon({
+          className: '',
+          html: `<div class="stop-marker-pin">${s.stop_sequence}</div>`,
+          iconSize: [24, 24],
+          iconAnchor: [12, 12]
+        });
+
+        const stopNameDisp = escapeHTML(getDisplayName(s.stop_name));
+        L.marker([s.lat, s.lng], { icon: stopPin })
+          .bindPopup(
+            `<div class="p-1 space-y-1 text-xs">` +
+            `<div class="font-bold text-cyan-400">Stop #${s.stop_sequence}</div>` +
+            `<div class="font-extrabold text-sm text-white">${stopNameDisp}</div>` +
+            `<div class="text-slate-300">${s.landmark || s.area || 'Transit Point'}</div>` +
+            `<div class="pt-1 text-slate-400 border-t border-white/10">Distance: <b>${s.distance_km} km</b> • +${s.eta_from_start_mins} mins</div>` +
+            `</div>`
+          )
+          .addTo(routePolylineLayer);
+      });
+
+      // Active buses
+      activeBuses.forEach((b) => {
+        if (b.lat != null && b.lng != null) {
+          L.marker([b.lat, b.lng], { icon: createBusMarkerIcon(b, true), zIndexOffset: 2000 })
+            .bindPopup(
+              `<div class="p-1 text-xs">` +
+              `<div class="font-bold text-sm text-cyan-400">🚌 Live Bus ${escapeHTML(b.bus_number)}</div>` +
+              `<div>Passing: <b>${escapeHTML(getDisplayName(b.current_location))}</b></div>` +
+              `<div>ETA: <b>${b.eta_minutes} mins</b> (${b.crowd_percentage}% full)</div>` +
+              `</div>`
+            )
+            .addTo(routePolylineLayer);
+        }
+      });
+
+      map.fitBounds(polyline.getBounds(), { padding: [50, 50], maxZoom: 15 });
+      $('map-status-label').textContent = isTelugu
+        ? `రూట్ ${busNumber} పరిశీలన (${stops.length} స్టాప్‌లు)`
+        : `Inspecting Route ${busNumber} (${stops.length} Stops)`;
+      $('btn-reset-map').classList.remove('hidden');
+    }
+
+    $('btn-trace-map').onclick = () => {
+      const busNumber = $('select-bus-number').value;
+      if (busNumber) inspectBusRoute(busNumber);
+    };
+
+    $('btn-copy-stops').onclick = () => {
+      if (!currentInspectedRoute || !currentInspectedRoute.stops || !currentInspectedRoute.stops.length) {
+        return showToast('Please inspect a route first', true);
+      }
+      const r = currentInspectedRoute.route;
+      const stops = currentInspectedRoute.stops;
+      let text = `APSRTC VIZAG BUS ROUTE: ${r ? r.bus_number : ''} (${r ? r.source : ''} ➔ ${r ? r.destination : ''})\n`;
+      text += `Via: ${r ? r.via : ''} | Total Stops: ${stops.length}\n`;
+      text += `------------------------------------------------------\n`;
+      stops.forEach((s) => {
+        text += `${String(s.stop_sequence).padStart(2, '0')}. ${s.stop_name} [${s.distance_km} km, +${s.eta_from_start_mins} mins]\n`;
+      });
+      navigator.clipboard.writeText(text).then(() => {
+        showToast(`Route ${r ? r.bus_number : ''} schedule copied!`);
+      }).catch(() => showToast('Could not copy to clipboard', true));
+    };
+
+    // ========================================================================
+    // 6. STOP DIRECTORY
+    // ========================================================================
+    async function loadAllStops() {
+      try {
+        const data = await apiCall('/api/stops');
+        allStopsCache = data.stops || [];
+        const selectEl = $('select-stop-directory');
+        selectEl.innerHTML = `<option value="">-- Select from 70+ Vizag Stops --</option>` +
+          allStopsCache.map((s) => `
+            <option value="${escapeHTML(s.stop_name)}">
+              🚏 ${escapeHTML(getDisplayName(s.stop_name))} (${escapeHTML(s.area || 'Vizag')})
+            </option>
+          `).join('');
+      } catch (e) {
+        console.error('Failed to load stops', e);
+      }
+    }
+
+    async function inspectStopBuses(stopName) {
+      if (!stopName) return showToast('Please select a bus stop', true);
+      switchCommuterSubTab('directory');
+      $('select-stop-directory').value = stopName;
+
+      try {
+        const res = await apiCall(`/api/stops/${encodeURIComponent(stopName)}/buses`);
+        const buses = res.buses || [];
+        const outputEl = $('stop-buses-output');
+
+        if (!buses.length) {
+          outputEl.innerHTML = `
+            <div class="p-4 text-center text-xs text-slate-400 rounded-xl bg-slate-900/60 border border-white/10">
+              No scheduled buses found for ${escapeHTML(stopName)}.
+            </div>
+          `;
+          return;
+        }
+
+        const dispStop = escapeHTML(getDisplayName(stopName));
+        outputEl.innerHTML = `
+          <div class="p-2.5 rounded-xl flex items-center justify-between text-xs bg-cyan-950/60 border border-cyan-500/40">
+            <span class="font-extrabold text-cyan-300">🚏 ${dispStop}</span>
+            <span class="font-bold text-white">${buses.length} Passing Lines</span>
+          </div>
+        ` + buses.map((b) => `
+          <div class="p-3 rounded-xl space-y-1.5 bg-slate-900/90 border border-white/10 hover:border-cyan-500/40 transition-all">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <span class="px-2 py-0.5 rounded-lg text-xs font-black bg-cyan-500 text-slate-950">
+                  ${escapeHTML(b.bus_number)}
+                </span>
+                <span class="text-xs font-bold text-white">${escapeHTML(getDisplayName(b.source))} ➔ ${escapeHTML(getDisplayName(b.destination))}</span>
+              </div>
+              <span class="text-[11px] font-bold text-cyan-300">Every ${b.frequency_mins || 15}m</span>
+            </div>
+            <div class="text-[11px] text-slate-400">
+              Via: ${escapeHTML(b.via || 'Direct Corridor')} • Fare: ₹${b.fare_min || 10}–₹${b.fare_max || 30}
+            </div>
+            <div class="pt-1 flex items-center justify-between">
+              <span class="text-[10px] text-slate-500">Stop Sequence: #${b.stop_sequence}</span>
+              <button onclick="inspectBusRoute('${escapeHTML(b.bus_number)}')" class="text-cyan-400 hover:underline font-bold text-xs">
+                Inspect Route & Stops ➔
+              </button>
+            </div>
+          </div>
+        `).join('');
+
+        const stopObj = allStopsCache.find((s) => s.stop_name.toLowerCase() === stopName.toLowerCase());
+        if (stopObj && stopObj.lat != null) {
+          map.setView([stopObj.lat, stopObj.lng], 15);
+          if (nearestStopMarker) map.removeLayer(nearestStopMarker);
+          nearestStopMarker = L.circleMarker([stopObj.lat, stopObj.lng], {
+            radius: 12,
+            color: '#38BDF8',
+            weight: 3,
+            fillColor: '#0EA5E9',
+            fillOpacity: 0.95
+          }).addTo(map).bindPopup(`<b>🚏 ${dispStop}</b><br>${buses.length} bus lines halt here`).openPopup();
+        }
+
+        showToast(`Found ${buses.length} buses halting at ${stopName}`);
+      } catch (err) {
+        showToast(`Failed to load buses: ${err.message}`, true);
+      }
+    }
+
+    $('btn-inspect-stop').onclick = () => {
+      const stopName = $('select-stop-directory').value;
+      if (stopName) inspectStopBuses(stopName);
+    };
+
+    $('select-stop-directory').onchange = (e) => {
+      if (e.target.value) inspectStopBuses(e.target.value);
+    };
+
+    // ========================================================================
+    // 7. USER GEOLOCATION & NEAREST STOP
+    // ========================================================================
+    function locateUser() {
+      return new Promise((resolve) => {
+        if (!navigator.geolocation) {
+          userCoords = [17.7205, 83.3168];
+          resolve(userCoords);
+          return;
+        }
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            userCoords = [pos.coords.latitude, pos.coords.longitude];
+            if (userMarker) map.removeLayer(userMarker);
+            userMarker = L.marker(userCoords, {
+              icon: L.divIcon({ className: '', html: '<div class="user-pulse-marker"></div>', iconSize: [18, 18] })
+            }).addTo(map).bindPopup(`<b>${isTelugu ? 'మీ ప్రస్తుత ప్రదేశం' : 'Your Current Location'}</b>`).openPopup();
+            map.setView(userCoords, 15);
+            resolve(userCoords);
+          },
+          () => {
+            userCoords = [17.7205, 83.3168]; // Siripuram fallback
+            if (userMarker) map.removeLayer(userMarker);
+            userMarker = L.marker(userCoords, {
+              icon: L.divIcon({ className: '', html: '<div class="user-pulse-marker"></div>', iconSize: [18, 18] })
+            }).addTo(map).bindPopup(`<b>${isTelugu ? 'మీ ప్రదేశం (సిరిపురం)' : 'Your Location (Siripuram)'}</b>`).openPopup();
+            map.setView(userCoords, 15);
+            resolve(userCoords);
+          },
+          { enableHighAccuracy: true, timeout: 6000 }
+        );
+      });
+    }
+
+    function haversineDistanceMeters(lat1, lon1, lat2, lon2) {
+      const R = 6371000;
+      const toRad = (deg) => (deg * Math.PI) / 180;
+      const dLat = toRad(lat2 - lat1);
+      const dLon = toRad(lon2 - lon1);
+      const a =
+        Math.sin(dLat / 2) ** 2 +
+        Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+      return 2 * R * Math.asin(Math.sqrt(a));
+    }
+
+    $('btn-locate').onclick = async () => {
+      await locateUser();
+      showToast('Current location pinned on map');
+    };
+
+    $('btn-nearest').onclick = async () => {
+      try {
+        if (!userCoords) await locateUser();
+        if (!allStopsCache.length) await loadAllStops();
+
+        let nearest = null;
+        let minDistance = Infinity;
+        allStopsCache.forEach((s) => {
+          const d = haversineDistanceMeters(userCoords[0], userCoords[1], s.lat, s.lng);
+          if (d < minDistance) {
+            minDistance = d;
+            nearest = s;
+          }
+        });
+
+        if (nearest) {
+          if (nearestStopMarker) map.removeLayer(nearestStopMarker);
+          const nearDisp = escapeHTML(getDisplayName(nearest.stop_name));
+          nearestStopMarker = L.circleMarker([nearest.lat, nearest.lng], {
+            radius: 12,
+            color: '#38BDF8',
+            weight: 3,
+            fillColor: '#0EA5E9',
+            fillOpacity: 0.95
+          }).addTo(map).bindPopup(
+            `<b>🚏 Nearest Stop: ${nearDisp}</b><br>` +
+            `Distance: ${minDistance < 1000 ? Math.round(minDistance) + ' m' : (minDistance / 1000).toFixed(2) + ' km'} ` +
+            `(~${Math.max(1, Math.round(minDistance / 80))} min walk)<br>` +
+            `<button onclick="inspectStopBuses('${escapeHTML(nearest.stop_name)}')" class="mt-1.5 px-2.5 py-1 rounded-lg bg-cyan-500 text-slate-950 text-xs font-bold w-full">View Passing Buses</button>`
+          ).openPopup();
+
+          map.fitBounds([userCoords, [nearest.lat, nearest.lng]], { padding: [60, 60], maxZoom: 16 });
+          $('input-src').value = nearest.stop_name;
+          $('btn-clear-src').classList.add('visible');
+          showToast(`Nearest stop set to ${nearest.stop_name}`);
+        }
+      } catch (err) {
+        showToast(err.message, true);
+      }
+    };
+
+    // ========================================================================
+    // 8. COMPLAINTS & TICKETING
+    // ========================================================================
+    $('btn-submit-complaint').onclick = async () => {
+      const busNum = $('comp-bus').value.trim() || 'General Transit';
+      const text = $('comp-text').value.trim();
+      if (!text) return showToast('Please describe the issue in detail', true);
+
+      try {
+        const res = await apiCall('/api/complaints', {
+          method: 'POST',
+          body: JSON.stringify({ bus_number: busNum, complaint_text: text })
+        });
+        const isHigh = /high/i.test(res.priority);
+        $('ticket-output').innerHTML = `
+          <div class="p-3.5 rounded-xl space-y-1.5 bg-slate-900/90 border border-cyan-500/40 animate-slide-up">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-black text-cyan-300">🎫 Ticket ID: ${escapeHTML(res.ticket_id)}</span>
+              <span class="text-[10px] font-black uppercase px-2 py-0.5 rounded-full ${isHigh ? 'bg-rose-500/20 text-rose-400 border border-rose-500/40' : 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'}">
+                ${escapeHTML(res.priority)} Priority
+              </span>
+            </div>
+            <div class="text-xs font-semibold text-white">Category: ${escapeHTML(res.category)} • Bus ${escapeHTML(busNum)}</div>
+            <div class="flex items-center justify-between pt-1">
+              <span class="text-[11px] text-slate-400">Sent to Visakhapatnam Fleet Control Queue</span>
+              <button onclick="navigator.clipboard.writeText('${escapeHTML(res.ticket_id)}'); showToast('Ticket ID copied!');" class="text-[11px] font-bold text-cyan-400 hover:underline">
+                📋 Copy Ticket ID
+              </button>
+            </div>
+          </div>
+        `;
+        $('comp-text').value = '';
+        showToast(`Ticket ${res.ticket_id} logged successfully!`);
+      } catch (err) {
+        showToast('Failed to submit complaint', true);
+      }
+    };
+
+    // ========================================================================
+    // 9. TELUGU / ENGLISH TOGGLE
+    // ========================================================================
+    $('btn-lang-toggle').onclick = () => {
+      isTelugu = !isTelugu;
+      $('lang-btn-text').textContent = isTelugu ? 'English' : 'తెలుగు';
+      showToast(isTelugu ? 'భాష తెలుగుకు మార్చబడింది (Switched to Telugu)' : 'Language switched to English');
+
+      // Update dropdowns
+      loadAllStops();
+      loadAllRoutes();
+      if (hasSearched) executeSearch();
+    };
+
+    // SOS Modal Handlers
+    $('btn-open-sos').onclick = () => $('modal-sos').classList.remove('hidden');
+    $('btn-close-sos').onclick = () => $('modal-sos').classList.add('hidden');
+    $('modal-sos').onclick = (e) => {
+      if (e.target === $('modal-sos')) $('modal-sos').classList.add('hidden');
+    };
+
+    // Live Radar Simulation Toggle
+    $('btn-live-simulation').onclick = () => {
+      liveSimulationActive = !liveSimulationActive;
+      const btn = $('btn-live-simulation');
+      if (liveSimulationActive) {
+        $('radar-icon').textContent = '⚡';
+        $('radar-label').textContent = 'Radar: ON';
+        btn.classList.remove('opacity-60');
+        showToast('Live Radar active');
+      } else {
+        $('radar-icon').textContent = '⏸';
+        $('radar-label').textContent = 'Radar: PAUSED';
+        btn.classList.add('opacity-60');
+        showToast('Live Radar paused');
+      }
+    };
+
+    // ========================================================================
+    // 10. APP INITIALIZATION ON LOAD
+    // ========================================================================
+    initMap();
+    bindAutocomplete($('input-src'), $('sug-src'), $('btn-clear-src'));
+    bindAutocomplete($('input-dst'), $('sug-dst'), $('btn-clear-dst'));
+    loadAllStops();
+    loadAllRoutes();
+    fetchAndRenderAllBuses();
+
+    // Show initial clean search prompt placeholder
+    $('search-results').innerHTML = `
+      <div class="p-8 rounded-2xl text-center space-y-2.5 bg-slate-900/60 border border-dashed border-white/15 animate-slide-up">
+        <div class="text-3xl">🔍</div>
+        <div class="text-xs font-bold text-white">Search Your Journey</div>
+        <p class="text-[11px] text-slate-400 max-w-xs mx-auto">
+          Enter your origin and destination stops above or tap a quick destination, then click "Find Connecting Buses" to view route buses on the map!
+        </p>
+      </div>
+    `;
+
+    // Periodic simulation poll
+    setInterval(() => {
+      if (liveSimulationActive) fetchAndRenderAllBuses();
+    }, 10000);
+  </script>
+</body>
+</html>

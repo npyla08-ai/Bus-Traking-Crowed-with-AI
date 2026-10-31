@@ -3,4 +3,3 @@ __pycache__/
 backend/.env
 .env
 venv/
-*.db
