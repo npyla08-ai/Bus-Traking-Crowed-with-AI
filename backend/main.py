@@ -369,13 +369,15 @@ def create_complaint(payload: ComplaintCreate):
     cursor = conn.cursor()
     ticket_id = f"TICK-{uuid.uuid4().hex[:6].upper()}"
     route_no = payload.bus_id.split("-")[1] if "-" in payload.bus_id else payload.bus_id
-    priority = "High" if "Skip" in payload.category or "Rash" in payload.category else "Medium"
-    full_text = f"[{payload.stop_name}] {payload.description}"
+    cat = payload.category or "General"
+    priority = "High" if ("Skip" in cat or "Rash" in cat) else "Medium"
+    stop = payload.stop_name or "Visakhapatnam"
+    full_text = f"[{stop}] {payload.description}"
 
     cursor.execute("""
         INSERT INTO complaints (ticket_id, bus_number, complaint_text, ai_category, ai_priority, status, media_url)
         VALUES (?, ?, ?, ?, ?, 'Open', ?)
-    """, (ticket_id, route_no, full_text, payload.category, priority, payload.media_url))
+    """, (ticket_id, route_no, full_text, cat, priority, payload.media_url))
     conn.commit()
     conn.close()
     return {"status": "created", "ticket_id": ticket_id}
