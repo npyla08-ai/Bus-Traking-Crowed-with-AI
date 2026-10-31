@@ -2,11 +2,6 @@
 .env
 *.env
 
-# SQLite Database
-*.db
-*.sqlite3
-database/*.db
-
 # Python
 __pycache__/
 *.py[cod]

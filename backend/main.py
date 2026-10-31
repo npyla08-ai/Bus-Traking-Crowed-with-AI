@@ -71,7 +71,10 @@ def serve_admin():
 @app.on_event("startup")
 def ensure_db_seeded():
     try:
-        from seed import init_db
+        try:
+            from seed import init_db
+        except ImportError:
+            from backend.seed import init_db
         init_db(DB_PATH)
         print(f"✓ Database verified and ready at {DB_PATH}")
     except Exception as e:
