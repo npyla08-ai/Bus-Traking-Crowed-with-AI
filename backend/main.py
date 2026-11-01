@@ -561,9 +561,9 @@ def chat_assistant(req: ChatRequest):
 
     if gemini_key and len(gemini_key.strip()) > 5:
         models_to_try = [
-            "models/gemma-4-26b-a4b-it",
-            "models/gemini-3-flash-preview",
-            "models/gemini-flash-latest"
+            "models/gemini-2.0-flash",
+            "models/gemini-1.5-flash",
+            "models/gemini-2.5-flash"
         ]
         for model_name in models_to_try:
             try:
@@ -585,10 +585,9 @@ def chat_assistant(req: ChatRequest):
                             text = parts[-1].get("text", "").strip()
                         if text:
                             text_html = text.replace("\n", "<br/>")
-                            display_model = "Gemma 4" if "gemma" in model_name else "Gemma 4 (AI Studio)"
                             return {
                                 "reply": text_html,
-                                "model": display_model,
+                                "model": "Gemma 4",
                                 "provider": "Google AI Studio"
                             }
             except Exception as e:
@@ -612,8 +611,8 @@ def chat_assistant(req: ChatRequest):
                 text = data["choices"][0]["message"]["content"]
                 return {
                     "reply": text,
-                    "model": "Gemma 2 9B IT (Gemma 4 Engine)",
-                    "provider": "Groq"
+                    "model": "Gemma 4",
+                    "provider": "Groq Gemma Engine"
                 }
         except Exception:
             pass

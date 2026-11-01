@@ -2,7 +2,10 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>VizagBus — APSRTC Management & Conductor Portal</title>
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
+  <title>VizagBus AI — APSRTC Management & Conductor Portal</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <script src="https://cdn.tailwindcss.com"></script>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -360,28 +363,25 @@ body.nodash .qnav{display:none}
         return clean;
       }
       const saved = localStorage.getItem('VIZAG_API_BASE');
-      if (saved && !saved.includes('onrender.com')) {
+      if (saved && !saved.includes('localhost') && !saved.includes('127.0.0.1')) {
         return saved.replace(/\/+$/, '');
       }
       if (window.API_BASE) return window.API_BASE.replace(/\/+$/, '');
 
-      // If opened directly from file system (file://)
-      if (window.location.protocol === 'file:' || !window.location.hostname) {
+      // If opened directly from file system or local test environment
+      if (window.location.protocol === 'file:' || !window.location.hostname || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+        const port = window.location.port;
+        if (port === '8000') return window.location.origin;
         return 'http://127.0.0.1:8000';
       }
 
-      // If running on local static dev servers (Live Server 5500, Vite 5173, React 3000)
-      const port = window.location.port;
-      if (port && port !== '8000' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
-        return 'http://127.0.0.1:8000';
-      }
-
-      // If served directly over HTTP/HTTPS by backend or Render container
-      if (window.location.protocol.startsWith('http')) {
+      // If loaded directly from the backend Render web service
+      if (window.location.hostname.includes('vizagbus-ai-backend')) {
         return window.location.origin;
       }
 
-      return 'http://127.0.0.1:8000';
+      // Default production backend for standalone frontend deployments (Render static site, Vercel, Netlify, GitHub Pages)
+      return 'https://vizagbus-ai-backend.onrender.com';
     }
     const API_BASE = resolveApiBase();
 
