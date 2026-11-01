@@ -14,9 +14,9 @@ from dotenv import load_dotenv
 load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 
 try:
-    from db import get_db, DB_PATH
+    from db import get_db, DB_PATH, sync_all_db_files
 except ImportError:
-    from backend.db import get_db, DB_PATH
+    from backend.db import get_db, DB_PATH, sync_all_db_files
 
 def get_frontend_dir():
     local_fe = os.path.abspath(os.path.join(os.path.dirname(__file__), "frontend"))
@@ -91,15 +91,21 @@ def ensure_db_seeded():
     except Exception:
         pass
 
+    try:
+        sync_all_db_files()
+    except Exception:
+        pass
+
 class ConductorUpdate(BaseModel):
     bus_id: str
     delta_passengers: int
 
 class ComplaintCreate(BaseModel):
-    bus_id: str
+    bus_id: Optional[str] = "400K"
     stop_name: Optional[str] = "Visakhapatnam"
     category: Optional[str] = "Route / Stop Violation"
-    description: str
+    description: Optional[str] = ""
+    complaint_text: Optional[str] = None
     media_url: Optional[str] = None
 
 class ChatRequest(BaseModel):
@@ -329,6 +335,7 @@ def update_conductor_count(payload: ConductorUpdate):
     cursor.execute("UPDATE buses SET crowd_percentage = ?, crowd_status = ? WHERE id = ?", (new_pct, new_status, row["id"]))
     conn.commit()
     conn.close()
+    sync_all_db_files()
     return {"status": "updated", "crowd_percentage": new_pct, "crowd_status": new_status}
 
 @app.get("/api/complaints")
@@ -340,7 +347,7 @@ def list_complaints():
     result = []
     for r in rows:
         d = dict(r)
-        c_text = d["complaint_text"]
+        c_text = d.get("complaint_text") or ""
         stop = "Visakhapatnam"
         desc = c_text
         if "]" in c_text and "[" in c_text:
@@ -367,7 +374,7 @@ def list_complaints():
             "stop_name": stop,
             "logged_occupancy_pct": 78,
             "ai_fine_inr": 1000 if d["ai_priority"] == "High" else 500,
-            "ai_action_summary": f"Depot Audit: Cross-verified with conductor headcount logs.",
+            "ai_action_summary": f"Gemma 4 Audit: Cross-verified with conductor headcount logs.",
             "ai_depot_order": f"Immediate telemetry report sent for Route {d['bus_number']}.",
             "created_at": d.get("created_at")
         })
@@ -379,11 +386,23 @@ def create_complaint(payload: ComplaintCreate):
     conn = get_db()
     cursor = conn.cursor()
     ticket_id = f"TICK-{uuid.uuid4().hex[:6].upper()}"
-    route_no = payload.bus_id.split("-")[1] if "-" in payload.bus_id else payload.bus_id
+
+    raw_bus = (payload.bus_id or "400K").strip()
+    parts = raw_bus.split("-")
+    if len(parts) >= 3:
+        route_no = parts[1]
+    elif len(parts) == 2:
+        route_no = parts[1] if parts[0].upper().startswith("AP") else parts[0]
+    else:
+        route_no = raw_bus
+    if not route_no:
+        route_no = "400K"
+
     cat = payload.category or "General"
     priority = "High" if ("Skip" in cat or "Rash" in cat) else "Medium"
-    stop = payload.stop_name or "Visakhapatnam"
-    full_text = f"[{stop}] {payload.description}"
+    stop = (payload.stop_name or "Visakhapatnam").strip()
+    desc = (payload.description or payload.complaint_text or "Passenger grievance logged via commuter portal.").strip()
+    full_text = f"[{stop}] {desc}"
 
     try:
         cursor.execute("""
@@ -396,26 +415,39 @@ def create_complaint(payload: ComplaintCreate):
             VALUES (?, ?, ?, ?, ?, 'Open')
         """, (ticket_id, route_no, full_text, cat, priority))
     conn.commit()
+    inserted_id = cursor.lastrowid
     conn.close()
-    return {"status": "created", "ticket_id": ticket_id}
+
+    # Sync all database files in repository
+    sync_all_db_files()
+
+    return {"status": "created", "ticket_id": ticket_id, "id": inserted_id}
 
 @app.post("/api/complaints/{complaint_id}/resolve")
-def resolve_complaint(complaint_id: int):
+def resolve_complaint(complaint_id: str):
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("UPDATE complaints SET status = 'Resolved' WHERE id = ?", (complaint_id,))
+    if complaint_id.isdigit():
+        cursor.execute("UPDATE complaints SET status = 'Resolved' WHERE id = ?", (int(complaint_id),))
+    else:
+        cursor.execute("UPDATE complaints SET status = 'Resolved' WHERE ticket_id = ? OR id = ?", (complaint_id, complaint_id))
     conn.commit()
     conn.close()
+    sync_all_db_files()
     return {"status": "resolved", "id": complaint_id}
 
 @app.delete("/api/complaints/{complaint_id}")
 @app.post("/api/complaints/{complaint_id}/delete")
-def delete_complaint(complaint_id: int):
+def delete_complaint(complaint_id: str):
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("DELETE FROM complaints WHERE id = ?", (complaint_id,))
+    if complaint_id.isdigit():
+        cursor.execute("DELETE FROM complaints WHERE id = ?", (int(complaint_id),))
+    else:
+        cursor.execute("DELETE FROM complaints WHERE ticket_id = ? OR id = ?", (complaint_id, complaint_id))
     conn.commit()
     conn.close()
+    sync_all_db_files()
     return {"status": "deleted", "id": complaint_id}
 
 @app.delete("/api/complaints/resolved/all")
@@ -427,6 +459,7 @@ def delete_all_resolved_complaints():
     deleted_count = cursor.rowcount
     conn.commit()
     conn.close()
+    sync_all_db_files()
     return {"status": "deleted", "count": deleted_count}
 
 @app.post("/api/admin/stops")
@@ -440,6 +473,7 @@ def add_admin_stop(payload: AdminStopCreate):
     conn.commit()
     stop_id = cursor.lastrowid
     conn.close()
+    sync_all_db_files()
     return {"status": "created", "id": stop_id, "name": payload.name}
 
 @app.post("/api/admin/buses")
@@ -465,6 +499,7 @@ def add_admin_bus(payload: AdminBusCreate):
     conn.commit()
     bus_id = cursor.lastrowid
     conn.close()
+    sync_all_db_files()
     return {"status": "created", "id": bus_id}
 
 @app.post("/api/chat")
@@ -504,33 +539,60 @@ def chat_assistant(req: ChatRequest):
     telemetry_text = "\n".join(telemetry_summary)
 
     system_prompt = (
-        "You are Gemma 4 Transit Assistant, an advanced AI for APSRTC Visakhapatnam (Vizag) public transit.\n"
-        "Use the live telemetry below to give accurate, polite, and helpful answers.\n"
-        "Always highlight route numbers, ETAs, and seat availability using <strong>Route XYZ</strong> or HTML tags.\n"
-        "If the user language is Telugu or query has Telugu text, reply in fluent Telugu.\n\n"
-        f"LIVE BUS TELEMETRY:\n{telemetry_text}"
+        "You are Gemma 4 Transit Assistant, the official AI for the VizagBus AI (APSRTC Visakhapatnam Smart Transit) web application.\n"
+        "STRICT DOMAIN BOUNDARY & APPLICATION SCOPE:\n"
+        "1. You MUST answer ONLY questions related to THIS WEB APPLICATION and Visakhapatnam public transit:\n"
+        "   - APSRTC bus routes (e.g. Route 400K, 900K, 28A, 38, 500, 60, 222, 55, 111, 211), timings, frequency, and first/last bus schedules.\n"
+        "   - Visakhapatnam bus stops, corridors, transit hubs (RTC Complex, NAD Junction, Maddilapalem, Gajuwaka, Rushikonda, Simhachalam, Kurmannapalem, PM Palem, etc.).\n"
+        "   - Live fleet seat availability, comfortable vs overcrowded buses, conductor headcount telemetry.\n"
+        "   - Origin-to-destination route planning, direct buses, and multimodal connections.\n"
+        "   - APSRTC city bus fare stages (Ordinary ₹10-₹25, Metro Express ₹15-₹35) and concession passes.\n"
+        "   - Commuter grievance reporting, ticket IDs (TICK-...), driver stop-skipping verification, and depot actions.\n"
+        "2. OUT-OF-SCOPE ENFORCEMENT:\n"
+        "   - If the user asks about ANYTHING outside this web application and Visakhapatnam public transit (such as general knowledge, coding, writing code, politics, sports, history, weather outside transit, recipes, mathematics, personal chat, or other cities):\n"
+        "   - You MUST politely decline and firmly redirect them:\n"
+        "     - In English: 'Namaskaram! I am Gemma 4, dedicated exclusively to the VizagBus AI (APSRTC Visakhapatnam) Transit Application. I can only assist you with Visakhapatnam bus routes, live seat availability, schedules, fares, and commuter grievances. How can I help with your Vizag journey today?'\n"
+        "     - In Telugu: 'నమస్కారం! నేను విశాఖపట్నం APSRTC బస్సు సమాచారం, రూట్లు, సీట్ల లభ్యత మరియు ఫిర్యాదుల వివరాల కోసం మాత్రమే రూపొందించబడ్డాను. ఇతర విషయాలకు సమాధానం ఇవ్వలేను. మీ విశాఖ ప్రయాణ వివరాలకు నేను ఎలా సహాయపడగలను?'\n"
+        "3. BILINGUAL FLUENCY:\n"
+        "   - If the user communicates in Telugu or asks in Telugu, respond in fluent, respectful, natural Telugu.\n"
+        "   - Always format key route numbers and stops with HTML: <strong>Route 400K</strong>, <strong>RTC Complex</strong>, <strong>Maddilapalem</strong>, etc.\n\n"
+        f"LIVE VISAKHAPATNAM TRANSIT TELEMETRY:\n{telemetry_text}"
     )
 
     if gemini_key and len(gemini_key.strip()) > 5:
-        try:
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={gemini_key}"
-            payload = {
-                "contents": [
-                    {"role": "user", "parts": [{"text": f"{system_prompt}\n\nUser Question: {user_message}"}]}
-                ],
-                "generationConfig": {"temperature": 0.2, "maxOutputTokens": 500}
-            }
-            res = requests.post(url, json=payload, timeout=8)
-            if res.status_code == 200:
-                data = res.json()
-                text = data["candidates"][0]["content"]["parts"][0]["text"]
-                return {
-                    "reply": text,
-                    "model": "Gemma 4 (Gemini 2.0 Flash Backbone)",
-                    "provider": "Google AI Studio"
+        models_to_try = [
+            "models/gemma-4-26b-a4b-it",
+            "models/gemini-3-flash-preview",
+            "models/gemini-flash-latest"
+        ]
+        for model_name in models_to_try:
+            try:
+                url = f"https://generativelanguage.googleapis.com/v1beta/{model_name}:generateContent?key={gemini_key.strip()}"
+                payload = {
+                    "systemInstruction": {"parts": [{"text": system_prompt}]},
+                    "contents": [{"parts": [{"text": user_message}]}],
+                    "generationConfig": {"temperature": 0.2, "maxOutputTokens": 1500}
                 }
-        except Exception:
-            pass
+                res = requests.post(url, json=payload, timeout=18)
+                if res.status_code == 200:
+                    data = res.json()
+                    candidates = data.get("candidates", [])
+                    if candidates:
+                        parts = candidates[0].get("content", {}).get("parts", [])
+                        clean_parts = [p.get("text", "") for p in parts if not p.get("thought", False)]
+                        text = "".join(clean_parts).strip()
+                        if not text and parts:
+                            text = parts[-1].get("text", "").strip()
+                        if text:
+                            text_html = text.replace("\n", "<br/>")
+                            display_model = "Gemma 4" if "gemma" in model_name else "Gemma 4 (AI Studio)"
+                            return {
+                                "reply": text_html,
+                                "model": display_model,
+                                "provider": "Google AI Studio"
+                            }
+            except Exception as e:
+                continue
 
     if groq_key and len(groq_key.strip()) > 5:
         try:

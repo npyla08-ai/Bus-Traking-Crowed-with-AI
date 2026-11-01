@@ -1,5 +1,6 @@
 import sqlite3
 import os
+import shutil
 
 def resolve_db_path() -> str:
     # 1. Check if DB_PATH environment variable is provided
@@ -26,6 +27,25 @@ def resolve_db_path() -> str:
     return os.path.abspath(os.path.join(os.path.dirname(__file__), "vizag_bus.db"))
 
 DB_PATH = resolve_db_path()
+
+def sync_all_db_files():
+    """Keep all SQLite database copies in repository synchronized with the active DB_PATH."""
+    try:
+        targets = [
+            os.path.abspath(os.path.join(os.path.dirname(__file__), "../database/vizag_bus.db")),
+            os.path.abspath(os.path.join(os.path.dirname(__file__), "../database/vizagbus.db")),
+            os.path.abspath(os.path.join(os.path.dirname(__file__), "vizag_bus.db")),
+            os.path.abspath(os.path.join(os.path.dirname(__file__), "vizagbus.db")),
+        ]
+        for dest in targets:
+            if os.path.normcase(dest) != os.path.normcase(DB_PATH):
+                try:
+                    os.makedirs(os.path.dirname(dest), exist_ok=True)
+                    shutil.copy2(DB_PATH, dest)
+                except Exception:
+                    pass
+    except Exception as e:
+        print(f"Database sync notice: {e}")
 
 def get_db():
     try:

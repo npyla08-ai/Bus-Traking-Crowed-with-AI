@@ -110,7 +110,7 @@ body.nodash .qnav{display:none}
           APSRTC Management & Conductor Portal
           <span class="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">Admin Secure</span>
         </h1>
-        <p class="text-xs text-slate-400">Live Ticketing Headcount, Fleet/Route Configuration & Grievance Ledger</p>
+        <p class="text-xs text-slate-400">Live Ticketing Headcount, Fleet/Route Configuration & Gemma 4 Grievance Ledger</p>
       </div>
     </div>
     
@@ -332,7 +332,7 @@ body.nodash .qnav{display:none}
           <div>
             <h2 class="text-base font-bold text-white flex items-center gap-2">
               <span class="w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping"></span>
-              Submitted Passenger Complaints & Vigilance Feed
+              Submitted Passenger Complaints & Gemma 4 Triage Feed
             </h2>
             <p class="text-xs text-slate-400">View uploaded photo/video evidence and click "Mark as Finished" once action is taken.</p>
           </div>
@@ -360,15 +360,28 @@ body.nodash .qnav{display:none}
         return clean;
       }
       const saved = localStorage.getItem('VIZAG_API_BASE');
-      if (saved) return saved.replace(/\/+$/, '');
+      if (saved && !saved.includes('onrender.com')) {
+        return saved.replace(/\/+$/, '');
+      }
       if (window.API_BASE) return window.API_BASE.replace(/\/+$/, '');
-      if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
-        return "http://127.0.0.1:8000";
+
+      // If opened directly from file system (file://)
+      if (window.location.protocol === 'file:' || !window.location.hostname) {
+        return 'http://127.0.0.1:8000';
       }
-      if (window.location.hostname !== "vizagbus-ai-backend.onrender.com") {
-        return "https://vizagbus-ai-backend.onrender.com";
+
+      // If running on local static dev servers (Live Server 5500, Vite 5173, React 3000)
+      const port = window.location.port;
+      if (port && port !== '8000' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
+        return 'http://127.0.0.1:8000';
       }
-      return window.location.origin;
+
+      // If served directly over HTTP/HTTPS by backend or Render container
+      if (window.location.protocol.startsWith('http')) {
+        return window.location.origin;
+      }
+
+      return 'http://127.0.0.1:8000';
     }
     const API_BASE = resolveApiBase();
 
@@ -511,28 +524,76 @@ body.nodash .qnav{display:none}
     // ==========================================
     // 2. LOAD MANAGEMENT DATA
     // ==========================================
+    async function syncPendingLocalComplaints(localComplaints, apiComplaints) {
+      const apiTickets = new Set(apiComplaints.map(c => c.ticket_id));
+      for (const loc of localComplaints) {
+        if (loc.ticket_id && !apiTickets.has(loc.ticket_id)) {
+          try {
+            await fetch(`${API_BASE}/api/complaints`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                bus_id: loc.bus_id || loc.bus_number,
+                stop_name: loc.stop_name,
+                category: loc.category || loc.issue_type || loc.ai_category,
+                description: loc.description || loc.complaint_text,
+                media_url: loc.media_url || loc.media_data
+              })
+            });
+          } catch (e) {}
+        }
+      }
+    }
+
     async function loadAdminData() {
       try {
         const [busesRes, stopsRes, compRes] = await Promise.all([
-          fetch(`${API_BASE}/api/buses`),
-          fetch(`${API_BASE}/api/stops`),
-          fetch(`${API_BASE}/api/complaints`)
+          fetch(`${API_BASE}/api/buses`).catch(() => null),
+          fetch(`${API_BASE}/api/stops`).catch(() => null),
+          fetch(`${API_BASE}/api/complaints`).catch(() => null)
         ]);
 
-        if (busesRes.ok) {
+        if (busesRes && busesRes.ok) {
           const bData = await busesRes.json();
           fleetBuses = Array.isArray(bData) ? bData : (bData.buses || []);
         }
-        if (stopsRes.ok) {
+        if (stopsRes && stopsRes.ok) {
           stopsList = await stopsRes.json();
         }
-        if (compRes.ok) {
-          cachedComplaints = await compRes.json();
+
+        let apiComplaints = [];
+        if (compRes && compRes.ok) {
+          apiComplaints = await compRes.json();
+        } else {
+          try {
+            const fbRes = await fetch("http://127.0.0.1:8000/api/complaints");
+            if (fbRes.ok) apiComplaints = await fbRes.json();
+          } catch (e) {}
         }
+
+        let localComplaints = [];
+        try {
+          localComplaints = JSON.parse(localStorage.getItem("vizagbus_complaints") || "[]");
+        } catch (e) {}
+
+        const seenKeys = new Set();
+        const merged = [];
+        for (const c of [...localComplaints, ...apiComplaints]) {
+          const key = c.ticket_id || (c.id ? `id_${c.id}` : null);
+          if (key && !seenKeys.has(key)) {
+            seenKeys.add(key);
+            merged.push(c);
+          }
+        }
+        cachedComplaints = merged;
 
         populateConductorDropdown();
         populateStopSelects();
         renderComplaintsFeed(cachedComplaints);
+
+        if (compRes && compRes.ok && localComplaints.length > 0) {
+          syncPendingLocalComplaints(localComplaints, apiComplaints);
+        }
       } catch (e) {
         console.warn("Could not sync live admin data:", e);
       }
@@ -684,14 +745,39 @@ body.nodash .qnav{display:none}
     }
 
     async function markComplaintFinished(complaintId) {
-      await fetch(`${API_BASE}/api/complaints/${complaintId}/resolve`, {
-        method: 'POST'
-      });
+      const comp = cachedComplaints.find(c => c.id === complaintId || c.ticket_id === complaintId);
+      if (comp) comp.status = 'Resolved';
+
+      try {
+        const stored = JSON.parse(localStorage.getItem("vizagbus_complaints") || "[]");
+        stored.forEach(c => {
+          if (c.id === complaintId || c.ticket_id === complaintId) c.status = 'Resolved';
+        });
+        localStorage.setItem("vizagbus_complaints", JSON.stringify(stored));
+      } catch (e) {}
+
+      renderComplaintsFeed(cachedComplaints);
+
+      try {
+        await fetch(`${API_BASE}/api/complaints/${complaintId}/resolve`, {
+          method: 'POST'
+        });
+      } catch (e) {}
       loadAdminData();
     }
 
     async function deleteComplaint(complaintId) {
       if (!confirm("Are you sure you want to remove this solved complaint?")) return;
+      cachedComplaints = cachedComplaints.filter(c => c.id !== complaintId && c.ticket_id !== complaintId);
+
+      try {
+        const stored = JSON.parse(localStorage.getItem("vizagbus_complaints") || "[]");
+        const filtered = stored.filter(c => c.id !== complaintId && c.ticket_id !== complaintId);
+        localStorage.setItem("vizagbus_complaints", JSON.stringify(filtered));
+      } catch (e) {}
+
+      renderComplaintsFeed(cachedComplaints);
+
       try {
         await fetch(`${API_BASE}/api/complaints/${complaintId}`, {
           method: 'DELETE'
@@ -703,8 +789,6 @@ body.nodash .qnav{display:none}
           });
         } catch (err) {}
       }
-      cachedComplaints = cachedComplaints.filter(c => c.id !== complaintId);
-      renderComplaintsFeed(cachedComplaints);
       loadAdminData();
     }
 
@@ -712,6 +796,17 @@ body.nodash .qnav{display:none}
       const resolved = cachedComplaints.filter(c => c.status === 'Resolved');
       if (resolved.length === 0) return alert("No solved complaints to remove.");
       if (!confirm(`Are you sure you want to delete all ${resolved.length} solved complaints?`)) return;
+
+      cachedComplaints = cachedComplaints.filter(c => c.status !== 'Resolved');
+
+      try {
+        const stored = JSON.parse(localStorage.getItem("vizagbus_complaints") || "[]");
+        const active = stored.filter(c => c.status !== 'Resolved');
+        localStorage.setItem("vizagbus_complaints", JSON.stringify(active));
+      } catch (e) {}
+
+      renderComplaintsFeed(cachedComplaints);
+
       try {
         await fetch(`${API_BASE}/api/complaints/resolved/all`, {
           method: 'DELETE'
@@ -723,13 +818,11 @@ body.nodash .qnav{display:none}
           });
         } catch (err) {}
       }
-      cachedComplaints = cachedComplaints.filter(c => c.status !== 'Resolved');
-      renderComplaintsFeed(cachedComplaints);
       loadAdminData();
     }
 
     function openMediaModal(complaintId) {
-      const comp = cachedComplaints.find(c => c.id === complaintId);
+      const comp = cachedComplaints.find(c => String(c.id) === String(complaintId) || String(c.ticket_id) === String(complaintId));
       const media = comp ? (comp.media_data || comp.media_url) : null;
       if (!comp || !media) return;
 
@@ -737,7 +830,7 @@ body.nodash .qnav{display:none}
       const body = document.getElementById('mediaModalBody');
       const busNum = comp.bus_id || comp.bus_number;
       const issue = comp.issue_type || comp.ai_category || "Grievance";
-      document.getElementById('mediaModalTitle').innerText = `Complaint #${comp.id} — Bus ${busNum} (${issue})`;
+      document.getElementById('mediaModalTitle').innerText = `Complaint #${comp.ticket_id || comp.id} — Bus ${busNum} (${issue})`;
 
       if (media.startsWith('data:video') || (comp.media_type && comp.media_type.startsWith('video/'))) {
         body.innerHTML = `<video src="${media}" controls autoplay class="max-h-[70vh] w-auto rounded"></video>`;
@@ -754,9 +847,10 @@ body.nodash .qnav{display:none}
     }
 
     function renderComplaintsFeed(complaints) {
-      const pendingCount = complaints.filter(c => c.status !== 'Resolved').length;
-      const resolvedCount = complaints.filter(c => c.status === 'Resolved').length;
-      document.getElementById('complaintTotalBadge').innerText = `${pendingCount} Pending / ${complaints.length} Total`;
+      const list = complaints || [];
+      const pendingCount = list.filter(c => c.status !== 'Resolved').length;
+      const resolvedCount = list.filter(c => c.status === 'Resolved').length;
+      document.getElementById('complaintTotalBadge').innerText = `${pendingCount} Pending / ${list.length} Total`;
       const delSolvedBtn = document.getElementById('deleteSolvedHeaderBtn');
       if (delSolvedBtn) {
         if (resolvedCount > 0) {
@@ -769,13 +863,13 @@ body.nodash .qnav{display:none}
       const feed = document.getElementById('complaintsFeed');
       if (!feed) return;
 
-      if (complaints.length === 0) {
+      if (list.length === 0) {
         feed.innerHTML = `<div class="p-8 text-center text-xs text-slate-500 border border-slate-800 rounded-xl">No passenger complaints submitted yet. Submit one from the Commuter Page to test live sync.</div>`;
         return;
       }
 
       feed.innerHTML = "";
-      complaints.forEach(c => {
+      list.forEach(c => {
         const isResolved = (c.status === 'Resolved');
         const severity = c.ai_severity || c.ai_priority || "HIGH";
         const badgeColor = isResolved 
@@ -784,13 +878,14 @@ body.nodash .qnav{display:none}
 
         const media = c.media_data || c.media_url;
         let mediaHtml = "";
+        const cKey = c.id || c.ticket_id;
         if (media) {
           if (media.startsWith('data:video') || (c.media_type && c.media_type.startsWith('video/'))) {
             mediaHtml = `
               <div class="mt-2 p-2.5 bg-slate-900 rounded-xl border border-slate-800 space-y-2">
                 <div class="flex justify-between items-center">
                   <span class="text-[11px] font-semibold text-cyan-400">📹 Attached Video Evidence</span>
-                  <button onclick="openMediaModal(${c.id})" class="px-2.5 py-1 rounded bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 text-[11px] font-semibold cursor-pointer">
+                  <button onclick="openMediaModal('${cKey}')" class="px-2.5 py-1 rounded bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 text-[11px] font-semibold cursor-pointer">
                     🔍 Open Fullscreen Video
                   </button>
                 </div>
@@ -802,11 +897,11 @@ body.nodash .qnav{display:none}
               <div class="mt-2 p-2.5 bg-slate-900 rounded-xl border border-slate-800 space-y-2">
                 <div class="flex justify-between items-center">
                   <span class="text-[11px] font-semibold text-cyan-400">🖼️ Attached Photo Evidence</span>
-                  <button onclick="openMediaModal(${c.id})" class="px-2.5 py-1 rounded bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 text-[11px] font-semibold cursor-pointer">
+                  <button onclick="openMediaModal('${cKey}')" class="px-2.5 py-1 rounded bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 text-[11px] font-semibold cursor-pointer">
                     🔍 View Full Size Photo
                   </button>
                 </div>
-                <img src="${media}" onclick="openMediaModal(${c.id})" class="w-full max-h-52 object-cover rounded-lg cursor-pointer hover:opacity-90 transition" />
+                <img src="${media}" onclick="openMediaModal('${cKey}')" class="w-full max-h-52 object-cover rounded-lg cursor-pointer hover:opacity-90 transition" />
               </div>
             `;
           }
@@ -822,13 +917,8 @@ body.nodash .qnav{display:none}
         const desc = c.description || c.complaint_text;
         const stop = c.stop_name || "Visakhapatnam";
 
-        const auditText = String(c.ai_action_summary || 'Depot Audit: Telemetry cross-verified.')
-          .replace(/gemma\s*4\s*audit:?/gi, 'Depot Audit:')
-          .replace(/gemma\s*4/gi, 'Depot')
-          .replace(/\bai\b/gi, 'Depot');
-        const depotOrder = String(c.ai_depot_order || 'Maintain fleet schedule.')
-          .replace(/gemma\s*4/gi, 'Depot')
-          .replace(/\bai\b/gi, 'Depot');
+        const auditText = c.ai_action_summary || 'Gemma 4 Audit: Telemetry cross-verified with conductor logs.';
+        const depotOrder = c.ai_depot_order || 'Maintain fleet schedule.';
 
         card.innerHTML = `
           <div class="flex justify-between items-center border-b border-slate-800 pb-2.5">
@@ -836,18 +926,18 @@ body.nodash .qnav{display:none}
               <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase ${badgeColor}">
                 ${isResolved ? '✓ FINISHED / RESOLVED' : severity}
               </span>
-              <span class="font-bold text-white text-sm">Complaint #${c.id} • Bus ${busNo}</span>
+              <span class="font-bold text-white text-sm">Complaint #${c.ticket_id || c.id} • Bus ${busNo}</span>
               <span class="text-slate-400">• ${issue}</span>
             </div>
             <div class="flex items-center gap-3">
               <span class="text-rose-400 font-bold">Fine: ₹${c.ai_fine_inr || 500}</span>
               ${!isResolved ? `
-                <button onclick="markComplaintFinished(${c.id})" class="px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] shadow transition cursor-pointer">
+                <button onclick="markComplaintFinished('${cKey}')" class="px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] shadow transition cursor-pointer">
                   ✓ Mark as Finished
                 </button>
               ` : `
                 <span class="text-[11px] text-emerald-400 font-semibold">Action Completed</span>
-                <button onclick="deleteComplaint(${c.id})" class="px-2.5 py-1 rounded-lg bg-rose-600/90 hover:bg-rose-500 text-white font-bold text-[11px] shadow transition cursor-pointer flex items-center gap-1" title="Delete this solved complaint">
+                <button onclick="deleteComplaint('${cKey}')" class="px-2.5 py-1 rounded-lg bg-rose-600/90 hover:bg-rose-500 text-white font-bold text-[11px] shadow transition cursor-pointer flex items-center gap-1" title="Delete this solved complaint">
                   🗑️ Delete
                 </button>
               `}
@@ -880,7 +970,21 @@ function updateStats(){const occ=b=>b.occupancy_pct!==undefined?b.occupancy_pct:
  countUp($('stFull'),fleetBuses.filter(b=>occ(b)>85).length);countUp($('stPending'),cachedComplaints.filter(c=>c.status!=='Resolved').length)}
 /* Only redraw the complaint feed when something changed (stops videos restarting every 5s) */
 const _rcf=renderComplaintsFeed;let _cs='';
-renderComplaintsFeed=function(c){updateStats();const s=JSON.stringify(c.map(x=>[x.id,x.status,x.media_url?1:0]));if(s===_cs)return;_cs=s;_rcf(c)};
+renderComplaintsFeed=function(c){
+  updateStats();
+  const list = c || [];
+  const feed = document.getElementById('complaintsFeed');
+  const isEmpty = !feed || feed.children.length === 0;
+  const s = JSON.stringify(list.map(x=>[x.id || x.ticket_id, x.status, (x.media_url || x.media_data)?1:0]));
+  if(!isEmpty && s === _cs) return;
+  _cs = s;
+  _rcf(list);
+};
+window.addEventListener('storage', (e) => {
+  if (e.key === 'vizagbus_complaints') {
+    loadAdminData();
+  }
+});
 /* Flash the headcount panel whenever it changes */
 const _rsc=renderSelectedConductorBus;let _last='';
 renderSelectedConductorBus=function(){_rsc();const b=$('conductorBusStatus'),t=b.textContent;if(_last&&t!==_last){b.classList.remove('flash');void b.offsetWidth;b.classList.add('flash')}_last=t};

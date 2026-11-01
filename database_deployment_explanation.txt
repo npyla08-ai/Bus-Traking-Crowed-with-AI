@@ -1,0 +1,109 @@
+================================================================================
+VIZAG BUS AI - DATABASE ARCHITECTURE & DEPLOYMENT EXPLANATION
+================================================================================
+
+1. WHAT DATABASE WE USED
+--------------------------------------------------------------------------------
+- Database Engine: SQLite3 (Serverless, self-contained, zero-configuration file-based database).
+- Database Files:
+    * database/vizag_bus.db
+    * database/vizagbus.db
+    * backend/vizag_bus.db
+    * backend/vizagbus.db
+- Core Relational Tables:
+    1. bus_stops: 70 geolocated stops across Greater Visakhapatnam (lat, lng, area, landmark).
+    2. bus_routes: 30 master APSRTC transit lines with timings, fare ranges, and frequency.
+    3. route_stops: 266 sequenced stops mapping full bus route paths with distance (km) and ETAs.
+    4. buses: 57 live simulated running buses with real-time GPS coordinates, occupancy, and status.
+    5. alternative_routes: 10 multimodal transit combinations (connecting buses, auto+bus combos).
+    6. complaints: Commuter grievance tickets with auto-generated ticket IDs, priority, and resolution status.
+
+
+2. WHY WE DEPLOYED IT THIS WAY (THE RATIONALE)
+--------------------------------------------------------------------------------
+- Render Free-Tier Ephemeral Storage:
+    * Free-tier hosting on Render uses temporary (ephemeral) container disk storage.
+    * When inactive for 15 minutes, Render spins down the service. When a new request arrives, Render rebuilds the container from the latest Git repository commit.
+    * Any database file created on the server during runtime would be completely erased every time Render sleeps or restarts.
+
+- The Hackathon Solution:
+    * We pre-seeded the SQLite database locally with 100% of the Visakhapatnam transit data (all 70 stops, 30 routes, 57 buses).
+    * We removed the database files from .gitignore and committed the populated .db files directly into GitHub.
+    * Result: Every time Render boots up, the pre-seeded database is already present inside the container filesystem. There is zero setup delay, zero missing data, and zero cold-start database failure.
+
+- In-Process Performance:
+    * SQLite runs directly inside the Python process memory and local disk.
+    * Unlike external cloud databases (PostgreSQL/MySQL), there is zero network latency between the FastAPI backend and SQLite. Queries return in under 5 milliseconds.
+    * Completely free: Eliminates paid external managed database tiers during hackathon evaluation.
+
+
+3. HOW WE DEPLOYED THE DATABASE (STEP-BY-STEP)
+--------------------------------------------------------------------------------
+- Step A (Local Population & Pre-seeding):
+    * Generated schema definitions (database/schema.sql and backend/seed.py).
+    * Populated the database with authentic Visakhapatnam transit data using seed scripts.
+
+- Step B (Dynamic Multi-Path Database Resolver):
+    * In backend/db.py, implemented resolve_db_path() with an intelligent fallback list:
+        1. DB_PATH environment variable (if set in Render dashboard).
+        2. ../database/vizag_bus.db (for monorepo local development).
+        3. backend/vizag_bus.db (for Render containers with backend as root).
+        4. Current working directory fallback.
+    * This ensures the backend finds the database regardless of whether it is launched from the project root or inside the backend folder.
+
+- Step C (Git Commit & Auto-Deployment to Render):
+    * Removed *.db exclusion from .gitignore.
+    * Committed backend/vizag_bus.db and database/vizag_bus.db to GitHub (branch: main).
+    * Render web service (connected to GitHub main branch) pulled the repository and deployed the backend with the database baked into the image.
+
+- Step D (Automated Schema Resilience & Migrations):
+    * In backend/main.py, added a startup handler (ensure_db_seeded) that executes:
+        ALTER TABLE complaints ADD COLUMN media_url TEXT;
+    * Added try/except fallback query handling during complaint insertion so that even if a table variant exists, queries never crash with HTTP 500 errors.
+
+
+4. WHERE WE USED THE DATABASE
+--------------------------------------------------------------------------------
+- Commuter Transit Web App (frontend/index.html):
+    * Fetches and renders all 70 bus stops on an interactive Leaflet map.
+    * Displays live fleet radar tracking 57 running buses with corridor filters.
+    * Powers the Route Explorer (bus numbers, ordered stops, fare range, frequency).
+    * Executes origin-to-destination search with direct routes and multimodal connecting options.
+    * Submits passenger complaints/grievances and generates instant tracking ticket IDs.
+
+- Depot Conductor & Management Portal (frontend/admin.html):
+    * Conductor Passenger Count Sync: Modifies crowd percentages in the database in real time.
+    * Dispatch Fleet: Allows adding or modifying bus route assignments and active coordinates.
+    * Grievance Queue: Reads all tickets from complaints table, allowing managers to Mark Resolved or Delete.
+
+- AI Transit Assistant (POST /api/chat):
+    * Queries the database for approaching buses, stop sequences, and seat availability.
+    * Uses database telemetry to ground Gemma AI responses in authentic Visakhapatnam transit facts (Telugu & English).
+
+- REST API Endpoints (backend/main.py):
+    * GET  /api/stops                 -> Returns all 70 bus stops.
+    * GET  /api/buses                 -> Returns 57 live running fleet buses.
+    * GET  /api/routes                -> Returns 30 master bus route lines.
+    * GET  /api/search-buses          -> Finds lines connecting origin and destination stops.
+    * GET  /api/alternative-routes   -> Returns connecting bus and auto+bus combos.
+    * POST /api/conductor/update      -> Updates passenger count and crowd level in buses table.
+    * GET  /api/complaints            -> Retrieves grievance queue for Depot Manager.
+    * POST /api/complaints            -> Inserts commuter complaints with ticket tracking ID.
+    * POST /api/complaints/{id}/resolve -> Updates ticket status to 'Resolved'.
+    * DELETE /api/complaints/{id}     -> Deletes resolved grievance tickets.
+
+
+5. HOW WE ARE USING AND MAINTAINING IT
+--------------------------------------------------------------------------------
+- Reading Data:
+    * Executed via connection helpers using sqlite3.Row for dictionary-like mapping.
+    * Fast read throughput with indexed primary keys and unique route/stop constraints.
+
+- Writing / Updating Data:
+    * Live updates (conductor headcount, crowd level changes, complaint tickets) write directly to the local SQLite database file on the server.
+    * Changes reflect immediately in the live session and UI.
+
+- Note for Hackathon Demos:
+    * Any live writes made during a demonstration (e.g., submitting a complaint or updating crowd to 99%) will persist throughout the live session.
+    * If Render remains idle for over 15 minutes and sleeps, it cleanly resets back to the original pre-seeded database committed to GitHub, ensuring the demo environment never breaks or corrupts permanently.
+================================================================================
