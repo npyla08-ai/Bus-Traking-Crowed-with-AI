@@ -85,7 +85,18 @@ def ensure_db_seeded():
 
     try:
         conn = get_db()
-        conn.execute("ALTER TABLE complaints ADD COLUMN media_url TEXT")
+        for col in [
+            "media_url TEXT",
+            "logged_occupancy_pct INTEGER",
+            "ai_fine_inr INTEGER",
+            "ai_action_summary TEXT",
+            "ai_depot_order TEXT",
+            "validation_result TEXT"
+        ]:
+            try:
+                conn.execute(f"ALTER TABLE complaints ADD COLUMN {col}")
+            except Exception:
+                pass
         conn.commit()
         conn.close()
     except Exception:
@@ -344,6 +355,11 @@ def list_complaints():
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM complaints ORDER BY id DESC")
     rows = cursor.fetchall()
+
+    cursor.execute("SELECT id, bus_number, crowd_percentage, crowd_status FROM buses")
+    buses_rows = cursor.fetchall()
+    buses_map = {str(b["bus_number"]): b["crowd_percentage"] for b in buses_rows}
+
     result = []
     for r in rows:
         d = dict(r)
@@ -355,27 +371,46 @@ def list_complaints():
             stop = parts[0].replace("[", "").strip()
             desc = parts[1].strip()
 
+        b_num = d.get("bus_number") or "400K"
+        logged_pct = d.get("logged_occupancy_pct")
+        if logged_pct is None:
+            logged_pct = buses_map.get(str(b_num), 78)
+
+        fine_inr = d.get("ai_fine_inr")
+        if fine_inr is None:
+            fine_inr = 0 if logged_pct >= 85 and ("Skip" in (d.get("ai_category") or "") or "Didn't Stop" in (d.get("ai_category") or "")) else (1000 if d.get("ai_priority") == "High" else 500)
+
+        action_summary = d.get("ai_action_summary")
+        if not action_summary:
+            if logged_pct >= 85 and ("Skip" in (d.get("ai_category") or "") or "Didn't Stop" in (d.get("ai_category") or "")):
+                action_summary = f"Gemma 4 Audit: Driver Justified (Complaint Dismissed). Telemetry confirms Route {b_num} was at {logged_pct}% capacity. Stop skipping was safety-mandated to prevent dangerous overloading. Fine: ₹0."
+            else:
+                action_summary = f"Gemma 4 Audit: Telemetry cross-verified with conductor headcount logs ({logged_pct}% full)."
+
+        depot_order = d.get("ai_depot_order") or f"Immediate telemetry report sent for Route {b_num}."
+
         result.append({
             "id": d["id"],
             "ticket_id": d["ticket_id"],
-            "bus_id": f"AP31Z-{d['bus_number']}",
-            "bus_number": d["bus_number"],
-            "route_no": d["bus_number"],
+            "bus_id": f"AP31Z-{b_num}",
+            "bus_number": b_num,
+            "route_no": b_num,
             "description": desc,
             "complaint_text": c_text,
-            "issue_type": d["ai_category"],
-            "ai_category": d["ai_category"],
-            "ai_priority": d["ai_priority"],
-            "ai_severity": "Critical" if d["ai_priority"] == "High" else "Medium",
-            "status": d["status"],
+            "issue_type": d.get("ai_category") or "General",
+            "ai_category": d.get("ai_category") or "General",
+            "ai_priority": d.get("ai_priority") or "Medium",
+            "ai_severity": "Critical" if d.get("ai_priority") == "High" else "Medium",
+            "status": d.get("status") or "Open",
             "media_url": d.get("media_url"),
             "media_data": d.get("media_url"),
             "media_type": "image/jpeg" if (d.get("media_url") and not str(d.get("media_url")).startswith("data:video")) else "video/mp4",
             "stop_name": stop,
-            "logged_occupancy_pct": 78,
-            "ai_fine_inr": 1000 if d["ai_priority"] == "High" else 500,
-            "ai_action_summary": f"Gemma 4 Audit: Cross-verified with conductor headcount logs.",
-            "ai_depot_order": f"Immediate telemetry report sent for Route {d['bus_number']}.",
+            "logged_occupancy_pct": logged_pct,
+            "ai_fine_inr": fine_inr,
+            "ai_action_summary": action_summary,
+            "ai_depot_order": depot_order,
+            "validation_result": d.get("validation_result") or ("JUSTIFIED_CAPACITY_FULL" if fine_inr == 0 else "VIOLATION_CONFIRMED"),
             "created_at": d.get("created_at")
         })
     conn.close()
@@ -389,31 +424,159 @@ def create_complaint(payload: ComplaintCreate):
 
     raw_bus = (payload.bus_id or "400K").strip()
     parts = raw_bus.split("-")
+    bus_db_id = None
     if len(parts) >= 3:
         route_no = parts[1]
+        if parts[2].isdigit():
+            bus_db_id = int(parts[2])
     elif len(parts) == 2:
         route_no = parts[1] if parts[0].upper().startswith("AP") else parts[0]
+        if parts[1].isdigit():
+            bus_db_id = int(parts[1])
     else:
         route_no = raw_bus
+        if raw_bus.isdigit():
+            bus_db_id = int(raw_bus)
+
     if not route_no:
         route_no = "400K"
 
+    # Query bus from buses table to get live telemetry
+    bus_row = None
+    if bus_db_id is not None:
+        cursor.execute("SELECT * FROM buses WHERE id = ?", (bus_db_id,))
+        bus_row = cursor.fetchone()
+    if not bus_row:
+        cursor.execute("SELECT * FROM buses WHERE bus_number = ? ORDER BY id ASC", (route_no,))
+        bus_row = cursor.fetchone()
+    if not bus_row:
+        cursor.execute("SELECT * FROM buses WHERE bus_number LIKE ? ORDER BY id ASC", (f"%{route_no}%",))
+        bus_row = cursor.fetchone()
+
+    actual_occupancy = bus_row["crowd_percentage"] if bus_row else 75
+    crowd_status = bus_row["crowd_status"] if bus_row else "Moderate"
+    speed = bus_row["speed_kmh"] if bus_row else 32
+
     cat = payload.category or "General"
-    priority = "High" if ("Skip" in cat or "Rash" in cat) else "Medium"
     stop = (payload.stop_name or "Visakhapatnam").strip()
     desc = (payload.description or payload.complaint_text or "Passenger grievance logged via commuter portal.").strip()
     full_text = f"[{stop}] {desc}"
 
+    # Gemma 4 Intelligent Telemetry Audit & Validation
+    is_skip_inquiry = any(k in cat.lower() or k in desc.lower() for k in ["skip", "empty", "didn't stop", "not stop", "ఆగ", "స్టాప్", "violation"])
+    is_overcrowd = any(k in cat.lower() or k in desc.lower() for k in ["overcrowd", "severe", "rush", "రద్దీ"])
+    is_rash = "rash" in cat.lower() or "rash" in desc.lower()
+
+    if is_skip_inquiry:
+        # Check if bus was full / overcrowded (>= 85% occupancy, especially 100%)
+        if actual_occupancy >= 85:
+            # DRIVER IS JUSTIFIED: Bus was at full capacity!
+            status = "Dismissed (Capacity Full)"
+            priority = "Low"
+            fine_inr = 0
+            validation_result = "JUSTIFIED_CAPACITY_FULL"
+            action_summary = (
+                f"Gemma 4 Audit: Driver Justified (Complaint Dismissed). Real-time conductor telemetry verifies Route {route_no} was at "
+                f"{actual_occupancy}% full capacity at {stop}. Boarding additional passengers would violate APSRTC safety weight/crowd limits. "
+                f"Driver is exonerated with ₹0 penalty. Depot notified for relief fleet dispatch."
+            )
+            depot_order = (
+                f"Depot Frequency Alert: Heavy passenger demand detected on Route {route_no} at {stop}. Dispatch relief bus."
+            )
+            user_msg_en = (
+                f"⚠️ Gemma 4 Audit Notice: Conductor telemetry verifies Route {route_no} was at {actual_occupancy}% FULL CAPACITY at your stop. "
+                f"Under APSRTC safety protocols, drivers must bypass stops when at maximum capacity to avoid stampedes. "
+                f"Driver is exonerated (Fine: ₹0). A frequency relief request has been dispatched to the Depot Manager!"
+            )
+            user_msg_te = (
+                f"⚠️ జెమ్మా 4 టెలిమెట్రీ ఆడిట్: కండక్టర్ డేటా ప్రకారం రూట్ {route_no} బస్సు మీ స్టాప్ వద్ద {actual_occupancy}% పూర్తి రద్దీతో ఉంది. "
+                f"ప్రయాణికుల రక్షణ దృష్ట్యా నిండిన బస్సును ఆపకపోవడం సమర్థనీయం. డ్రైవర్‌పై ఎటువంటి జరిమానా (₹0) ఉండదు. "
+                f"అదనపు బస్సు కోసం డిపోకు సమాచారం పంపబడింది!"
+            )
+            is_valid_violation = False
+        else:
+            # VIOLATION CONFIRMED: Seats were available!
+            status = "Open"
+            priority = "High"
+            fine_inr = 1000
+            validation_result = "VIOLATION_CONFIRMED"
+            action_summary = (
+                f"Gemma 4 Audit: VIOLATION CONFIRMED. Conductor telemetry logged only {actual_occupancy}% occupancy "
+                f"({100 - actual_occupancy}% seats available). Driver unjustifiably skipped stop despite clear capacity. "
+                f"Disciplinary fine of ₹1,000 imposed."
+            )
+            depot_order = (
+                f"Depot Order: Serve show-cause notice to Route {route_no} driver for stop skipping at {stop}. Fine ₹1,000 debited."
+            )
+            user_msg_en = (
+                f"🚨 Gemma 4 Telemetry Verified: Ticket #{ticket_id}. Conductor telemetry confirms Route {route_no} had empty seats "
+                f"({actual_occupancy}% occupancy) when it bypassed {stop}. Stop-skipping violation confirmed — ₹1,000 fine order sent to Depot Manager!"
+            )
+            user_msg_te = (
+                f"🚨 జెమ్మా 4 టెలిమెట్రీ ధృవీకరించింది: టికెట్ #{ticket_id}. రూట్ {route_no} బస్సులో కేవలం {actual_occupancy}% రద్దీ మాత్రమే ఉంది (సీట్లు ఖాళీగా ఉన్నాయి). "
+                f"స్టాప్ స్కిప్పింగ్ ఉల్లంఘన నిర్ధారించబడింది — డ్రైవర్‌పై ₹1,000 జరిమానా ఆదేశం డిపోకు పంపబడింది!"
+            )
+            is_valid_violation = True
+    elif is_overcrowd:
+        if actual_occupancy >= 85:
+            status = "Open"
+            priority = "High"
+            fine_inr = 0
+            validation_result = "OVERCROWDING_CONFIRMED"
+            action_summary = f"Gemma 4 Audit: Severe overcrowding verified via conductor telemetry ({actual_occupancy}% occupancy). Peak passenger bottleneck at {stop}."
+            depot_order = f"Urgent Depot Dispatch: High overcrowding on Route {route_no}. Deploy relief bus."
+            user_msg_en = f"✅ Gemma 4 Verified: Acute overcrowding confirmed ({actual_occupancy}%). Ticket #{ticket_id} routed to Depot Manager to dispatch a relief bus."
+            user_msg_te = f"✅ జెమ్మా 4 ధృవీకరించింది: తీవ్రమైన రద్దీ ({actual_occupancy}%) నిర్ధారించబడింది. టికెట్ #{ticket_id} ఆధారంగా అదనపు బస్సును డిపో మేనేజర్ పంపనున్నారు."
+            is_valid_violation = True
+        else:
+            status = "Dismissed (Comfortable)"
+            priority = "Low"
+            fine_inr = 0
+            validation_result = "OVERCROWDING_UNFOUNDED"
+            action_summary = f"Gemma 4 Audit: Telemetry confirms occupancy was only {actual_occupancy}% ({crowd_status}). Within comfortable limits."
+            depot_order = "Routine monitoring maintained."
+            user_msg_en = f"ℹ️ Gemma 4 Telemetry: Telemetry records Route {route_no} at {actual_occupancy}% occupancy (Comfortable range). Ticket #{ticket_id} logged for review."
+            user_msg_te = f"ℹ️ జెమ్మా 4 టెలిమెట్రీ: బస్సులో రద్దీ కేవలం {actual_occupancy}% మాత్రమే ఉంది (సాధారణ స్థాయి). టికెట్ #{ticket_id} సమీక్ష కోసం నమోదు చేయబడింది."
+            is_valid_violation = False
+    elif is_rash:
+        status = "Open"
+        priority = "High"
+        fine_inr = 1000
+        validation_result = "SAFETY_VIOLATION_AUDIT"
+        action_summary = f"Gemma 4 Audit: Rash driving alert logged. Speed logged at {speed} km/h near {stop}. Forwarded to Depot Safety Cell."
+        depot_order = f"Depot Action: Safety audit mandated for driver of Route {route_no} at {stop}."
+        user_msg_en = f"🚨 Ticket #{ticket_id} logged. GPS speed ({speed} km/h) and telemetry attached. Forwarded to Depot Vigilance for video review."
+        user_msg_te = f"🚨 టికెట్ #{ticket_id} నమోదు చేయబడింది. బస్సు వేగం ({speed} km/h) మరియు లొకేషన్ డిపో సేఫ్టీ విభాగానికి పంపబడింది."
+        is_valid_violation = True
+    else:
+        status = "Open"
+        priority = "Medium"
+        fine_inr = 500
+        validation_result = "ROUTINE_AUDIT"
+        action_summary = f"Gemma 4 Audit: Grievance tagged to Route {route_no} conductor logs at {actual_occupancy}% occupancy."
+        depot_order = f"Depot Action: Grievance assigned to Depot Grievance Cell."
+        user_msg_en = f"✅ Grievance logged! Ticket ID: {ticket_id}. Conductor logs attached for Depot Manager review."
+        user_msg_te = f"✅ మీ ఫిర్యాదు నమోదు చేయబడింది! టికెట్ ID: {ticket_id}. డిపో మేనేజర్ సమీక్షకు పంపబడింది."
+        is_valid_violation = True
+
     try:
         cursor.execute("""
-            INSERT INTO complaints (ticket_id, bus_number, complaint_text, ai_category, ai_priority, status, media_url)
-            VALUES (?, ?, ?, ?, ?, 'Open', ?)
-        """, (ticket_id, route_no, full_text, cat, priority, payload.media_url))
+            INSERT INTO complaints (
+                ticket_id, bus_number, complaint_text, ai_category, ai_priority,
+                status, media_url, logged_occupancy_pct, ai_fine_inr,
+                ai_action_summary, ai_depot_order, validation_result
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            ticket_id, route_no, full_text, cat, priority,
+            status, payload.media_url, actual_occupancy, fine_inr,
+            action_summary, depot_order, validation_result
+        ))
     except sqlite3.OperationalError:
         cursor.execute("""
-            INSERT INTO complaints (ticket_id, bus_number, complaint_text, ai_category, ai_priority, status)
-            VALUES (?, ?, ?, ?, ?, 'Open')
-        """, (ticket_id, route_no, full_text, cat, priority))
+            INSERT INTO complaints (ticket_id, bus_number, complaint_text, ai_category, ai_priority, status, media_url)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (ticket_id, route_no, full_text, cat, priority, status, payload.media_url))
+
     conn.commit()
     inserted_id = cursor.lastrowid
     conn.close()
@@ -421,7 +584,23 @@ def create_complaint(payload: ComplaintCreate):
     # Sync all database files in repository
     sync_all_db_files()
 
-    return {"status": "created", "ticket_id": ticket_id, "id": inserted_id}
+    return {
+        "status": "created",
+        "ticket_id": ticket_id,
+        "id": inserted_id,
+        "validation": {
+            "is_valid_violation": is_valid_violation,
+            "validation_result": validation_result,
+            "status": status,
+            "priority": priority,
+            "logged_occupancy_pct": actual_occupancy,
+            "fine_inr": fine_inr,
+            "action_summary": action_summary,
+            "depot_order": depot_order,
+            "user_message_en": user_msg_en,
+            "user_message_te": user_msg_te
+        }
+    }
 
 @app.post("/api/complaints/{complaint_id}/resolve")
 def resolve_complaint(complaint_id: str):

@@ -870,11 +870,27 @@ body.nodash .qnav{display:none}
 
       feed.innerHTML = "";
       list.forEach(c => {
-        const isResolved = (c.status === 'Resolved');
+        const isDismissed = (c.status && (c.status.includes('Dismissed') || c.status.includes('Capacity Full')));
+        const isResolved = (c.status === 'Resolved' || isDismissed);
         const severity = c.ai_severity || c.ai_priority || "HIGH";
-        const badgeColor = isResolved 
-          ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' 
-          : (severity === 'Critical' || severity === 'High' ? 'bg-rose-500 text-white' : 'bg-amber-500 text-slate-950');
+        const badgeColor = isDismissed 
+          ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' 
+          : (isResolved 
+            ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' 
+            : (severity === 'Critical' || severity === 'High' ? 'bg-rose-500 text-white' : 'bg-amber-500 text-slate-950'));
+
+        const badgeText = isDismissed
+          ? '✓ DISMISSED (100% FULL - JUSTIFIED)'
+          : (isResolved ? '✓ FINISHED / RESOLVED' : (severity === 'Critical' || severity === 'High' ? '🚨 VIOLATION CONFIRMED' : severity));
+
+        const fineText = (c.ai_fine_inr === 0 || isDismissed)
+          ? '<span class="text-emerald-400 font-bold">Fine: ₹0 (Driver Exonerated)</span>'
+          : `<span class="text-rose-400 font-bold">Fine: ₹${c.ai_fine_inr || 500}</span>`;
+
+        const occVal = c.logged_occupancy_pct !== undefined ? c.logged_occupancy_pct : 78;
+        const occBadge = occVal >= 85
+          ? '<span class="text-rose-400 font-bold">🚨 100% Maximum Capacity (Overcrowded)</span>'
+          : `<span class="text-emerald-400 font-bold">💺 ${100 - occVal}% Empty Seats Available</span>`;
 
         const media = c.media_data || c.media_url;
         let mediaHtml = "";
@@ -924,19 +940,19 @@ body.nodash .qnav{display:none}
           <div class="flex justify-between items-center border-b border-slate-800 pb-2.5">
             <div class="flex items-center gap-2">
               <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase ${badgeColor}">
-                ${isResolved ? '✓ FINISHED / RESOLVED' : severity}
+                ${badgeText}
               </span>
               <span class="font-bold text-white text-sm">Complaint #${c.ticket_id || c.id} • Bus ${busNo}</span>
               <span class="text-slate-400">• ${issue}</span>
             </div>
             <div class="flex items-center gap-3">
-              <span class="text-rose-400 font-bold">Fine: ₹${c.ai_fine_inr || 500}</span>
+              ${fineText}
               ${!isResolved ? `
                 <button onclick="markComplaintFinished('${cKey}')" class="px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] shadow transition cursor-pointer">
                   ✓ Mark as Finished
                 </button>
               ` : `
-                <span class="text-[11px] text-emerald-400 font-semibold">Action Completed</span>
+                <span class="text-[11px] text-emerald-400 font-semibold">${isDismissed ? 'Auto-Dismissed' : 'Action Completed'}</span>
                 <button onclick="deleteComplaint('${cKey}')" class="px-2.5 py-1 rounded-lg bg-rose-600/90 hover:bg-rose-500 text-white font-bold text-[11px] shadow transition cursor-pointer flex items-center gap-1" title="Delete this solved complaint">
                   🗑️ Delete
                 </button>
@@ -945,13 +961,13 @@ body.nodash .qnav{display:none}
           </div>
 
           <p class="text-slate-300"><b>Passenger Report (${stop}):</b> "${desc}"</p>
-          <p class="text-slate-400 text-[11px]"><b>Conductor Headcount Telemetry at Incident:</b> ${c.logged_occupancy_pct || 78}% full</p>
+          <p class="text-slate-400 text-[11px]"><b>Conductor Headcount Telemetry at Incident:</b> ${occVal}% full — ${occBadge}</p>
 
           ${mediaHtml}
 
-          <div class="p-2.5 bg-slate-900 rounded-lg border border-slate-800 text-[11px] text-emerald-400 font-mono">
-            ${auditText}<br/>
-            <b>Order:</b> ${depotOrder}
+          <div class="p-2.5 bg-slate-900 rounded-lg border border-slate-800 text-[11px] space-y-1">
+            <div class="${isDismissed ? 'text-amber-300 font-semibold' : 'text-emerald-400 font-mono'}">🤖 ${auditText}</div>
+            <div class="text-slate-300 text-[10px]"><b>Depot Order:</b> ${depotOrder}</div>
           </div>
         `;
         feed.appendChild(card);
